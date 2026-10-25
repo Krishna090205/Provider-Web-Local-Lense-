@@ -1467,6 +1467,21 @@ export async function deleteReview(reviewId: string): Promise<boolean> {
 // Public API Functions: Listings Management
 // ----------------------------------------------------
 
+/**
+ * Race a promise against a timeout so Supabase calls never hang indefinitely.
+ * Falls through to the local-cache path instead of blocking the UI.
+ */
+function withTimeout<T>(promise: Promise<T>, ms: number, label = 'Operation'): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms / 1000}s`)), ms);
+    promise.then(
+      (val) => { clearTimeout(timer); resolve(val); },
+      (err) => { clearTimeout(timer); reject(err); }
+    );
+  });
+}
+
+
 export async function createListing(
   listingData: Omit<Listing, 'id' | 'created_at' | 'rating' | 'review_count'> & { owner_email?: string }
 ): Promise<Listing> {
@@ -1478,12 +1493,21 @@ export async function createListing(
     let isApproved = currentUser.provider_status === 'approved';
 
     // Verify against live database in case admin approved on another machine/session
+    // Use a timeout so this never blocks submission indefinitely
     if (!isApproved) {
-      const liveCheck = await fetchLiveProviderStatus(currentUser.id || listingData.owner_id, currentUser.email || listingData.owner_email);
-      if (liveCheck.status === 'approved') {
-        isApproved = true;
-        currentUser.provider_status = 'approved';
-        saveStoredUser(currentUser);
+      try {
+        const liveCheck = await withTimeout(
+          fetchLiveProviderStatus(currentUser.id || listingData.owner_id, currentUser.email || listingData.owner_email),
+          8000,
+          'Provider status check'
+        );
+        if (liveCheck.status === 'approved') {
+          isApproved = true;
+          currentUser.provider_status = 'approved';
+          saveStoredUser(currentUser);
+        }
+      } catch (statusErr) {
+        console.warn('Live provider status check failed (continuing with local status):', statusErr);
       }
     }
 
@@ -1505,7 +1529,11 @@ export async function createListing(
 
   if (isSupabaseConfigured && (!effectiveOwnerId || !effectiveEmail)) {
     try {
-      const { data: authUser } = await supabase.auth.getUser();
+      const { data: authUser } = await withTimeout(
+        supabase.auth.getUser(),
+        5000,
+        'Auth user fetch'
+      );
       if (authUser?.user) {
         if (!effectiveOwnerId) effectiveOwnerId = authUser.user.id;
         if (!effectiveEmail && authUser.user.email) {
@@ -1528,15 +1556,23 @@ export async function createListing(
     status: listingData.status || 'approved'
   };
 
+  let supabaseSaved = false;
+
   if (isSupabaseConfigured) {
     try {
       const expPayload = listingToExperienceRow(newListing, effectiveEmail || undefined);
 
-      // Insert directly into public.experience table in Supabase
-      const { data, error } = await supabase
-        .from('experience')
-        .insert(expPayload)
-        .select();
+      // Insert directly into public.experience table in Supabase (with timeout)
+      const { data, error } = await withTimeout(
+        Promise.resolve(
+          supabase
+            .from('experience')
+            .insert(expPayload)
+            .select()
+        ),
+        15000,
+        'Supabase experience insert'
+      );
 
       if (!error && data && data.length > 0) {
         const mapped = experienceRowToListing(data[0]);
@@ -1546,10 +1582,12 @@ export async function createListing(
         return mapped;
       }
       if (error) {
-        console.warn('Supabase experience insert notice:', error.message);
+        console.warn('Supabase experience insert error:', error.code, error.message);
+        // If it's a permission/RLS error, log clearly but continue to local fallback
       }
     } catch (e: unknown) {
-      console.warn('Supabase createListing notice, saving to local cache:', e);
+      const errMsg = e instanceof Error ? e.message : String(e);
+      console.warn('Supabase createListing failed, saving to local cache:', errMsg);
     }
   }
 
@@ -1572,7 +1610,11 @@ export async function updateListing(id: string, updates: Partial<Listing>): Prom
 
       if (!effectiveEmail || !effectiveOwnerId) {
         try {
-          const { data: authUser } = await supabase.auth.getUser();
+          const { data: authUser } = await withTimeout(
+            supabase.auth.getUser(),
+            5000,
+            'Auth user fetch'
+          );
           if (authUser?.user) {
             if (!effectiveOwnerId) effectiveOwnerId = authUser.user.id;
             if (!effectiveEmail && authUser.user.email) {
@@ -1589,11 +1631,17 @@ export async function updateListing(id: string, updates: Partial<Listing>): Prom
         owner_id: effectiveOwnerId || undefined
       }, effectiveEmail || undefined);
 
-      const { data, error } = await supabase
-        .from('experience')
-        .update(expPayload)
-        .eq('experience_id', id)
-        .select();
+      const { data, error } = await withTimeout(
+        Promise.resolve(
+          supabase
+            .from('experience')
+            .update(expPayload)
+            .eq('experience_id', id)
+            .select()
+        ),
+        15000,
+        'Supabase experience update'
+      );
 
       if (!error && data && data.length > 0) {
         const mapped = experienceRowToListing(data[0]);
@@ -1604,8 +1652,12 @@ export async function updateListing(id: string, updates: Partial<Listing>): Prom
         }
         return mapped;
       }
+      if (error) {
+        console.warn('Supabase experience update error:', error.code, error.message);
+      }
     } catch (e) {
-      console.warn('Supabase updateListing failed, updating locally', e);
+      const errMsg = e instanceof Error ? e.message : String(e);
+      console.warn('Supabase updateListing failed, updating locally:', errMsg);
     }
   }
 

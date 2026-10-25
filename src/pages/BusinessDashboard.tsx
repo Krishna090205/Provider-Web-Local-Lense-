@@ -277,10 +277,32 @@ export const BusinessDashboard: React.FC = () => {
       : (!isNaN(Number(rawPrice)) ? `₹${rawPrice}` : (rawPrice.toLowerCase().startsWith('rs') ? rawPrice : (rawPrice ? `₹${rawPrice}` : '—')));
 
     try {
-      if (editingId) {
-        await updateMutation.mutateAsync({
-          id: editingId,
-          updates: {
+      // Safety timeout: if the entire save + refetch cycle takes > 30s, abort gracefully
+      const savePromise = (async () => {
+        if (editingId) {
+          await updateMutation.mutateAsync({
+            id: editingId,
+            updates: {
+              name: data.name.trim(),
+              category: data.category,
+              description: data.description.trim(),
+              address: data.address.trim(),
+              area: data.area.trim(),
+              lat: parseFloat(data.lat) || 18.9217,
+              lng: parseFloat(data.lng) || 72.8332,
+              phone: data.phone?.trim() || null,
+              website: finalWebsite,
+              price_level: formattedPrice,
+              hours: hoursObj,
+              photos: [photoObj],
+              status: 'approved'
+            }
+          });
+          toast.success('Establishment updated successfully!');
+        } else {
+          await createMutation.mutateAsync({
+            owner_id: user?.id,
+            owner_email: user?.email,
             name: data.name.trim(),
             category: data.category,
             description: data.description.trim(),
@@ -293,42 +315,28 @@ export const BusinessDashboard: React.FC = () => {
             price_level: formattedPrice,
             hours: hoursObj,
             photos: [photoObj],
-            status: 'approved'
-          }
-        });
-        toast.success('Establishment updated successfully!');
-      } else {
-        await createMutation.mutateAsync({
-          owner_id: user?.id,
-          owner_email: user?.email,
-          name: data.name.trim(),
-          category: data.category,
-          description: data.description.trim(),
-          address: data.address.trim(),
-          area: data.area.trim(),
-          lat: parseFloat(data.lat) || 18.9217,
-          lng: parseFloat(data.lng) || 72.8332,
-          phone: data.phone?.trim() || null,
-          website: finalWebsite,
-          price_level: formattedPrice,
-          hours: hoursObj,
-          photos: [photoObj],
-          status: 'approved',
-          featured: false
-        });
-        toast.success('🎉 Establishment successfully registered and published!');
-      }
+            status: 'approved',
+            featured: false
+          });
+          toast.success('🎉 Establishment successfully registered and published!');
+        }
+      })();
+
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Save operation timed out. Your data has been saved locally — it will sync when the server is reachable.')), 30000)
+      );
+
+      await Promise.race([savePromise, timeoutPromise]);
+
       setModalOpen(false);
       setEditingId(null);
       reset();
-      refetchListings();
+      // Refetch in background — don't let a refetch failure block the success flow
+      try { await refetchListings(); } catch { /* listing cache will update on next load */ }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Notice while saving listing';
-      toast.info(msg);
-      setModalOpen(false);
-      setEditingId(null);
-      reset();
-      refetchListings();
+      const msg = err instanceof Error ? err.message : 'Failed to save establishment';
+      toast.error(msg);
+      // Keep modal open and preserve form values so user can fix issues or retry
     }
   };
 

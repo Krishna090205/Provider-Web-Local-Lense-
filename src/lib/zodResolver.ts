@@ -17,6 +17,21 @@ export function zodResolver<T extends z.ZodType<any, any, any>>(
       }
 
       const issues = result.error.issues || (result.error as any).errors || [];
+
+      // Log validation issues in development only without exposing personal data or secrets
+      if (import.meta.env.DEV) {
+        console.warn(
+          'Zod validation issues:',
+          issues.map((issue: any) => ({
+            field: issue.path.join('.'),
+            message: issue.message,
+            code: issue.code,
+            expected: issue.expected,
+            received: issue.received,
+          }))
+        );
+      }
+
       const errors: Record<string, any> = {};
 
       for (const issue of issues) {
