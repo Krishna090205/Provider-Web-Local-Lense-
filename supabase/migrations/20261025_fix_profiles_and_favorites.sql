@@ -102,9 +102,57 @@ SELECT
     COALESCE(u.raw_user_meta_data->>'full_name', u.raw_user_meta_data->>'name', split_part(u.email, '@', 1)),
     u.email,
     COALESCE(u.raw_user_meta_data->>'role', 'provider'),
-    COALESCE(u.raw_user_meta_data->>'provider_status', 'pending')
+    COALESCE(u.raw_user_meta_data->>'provider_status', 'approved')
 FROM auth.users u
 LEFT JOIN public.profiles p ON p.id = u.id
 WHERE p.id IS NULL
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE SET
+    provider_status = 'approved';
+
+-- 5. Policies for public.experience
+ALTER TABLE public.experience ENABLE ROW LEVEL SECURITY;
+
+-- Allow public read of experiences
+DROP POLICY IF EXISTS "Public can view experiences" ON public.experience;
+DROP POLICY IF EXISTS "Experiences are viewable by everyone" ON public.experience;
+CREATE POLICY "Experiences are viewable by everyone"
+    ON public.experience FOR SELECT
+    USING (true);
+
+-- Allow authenticated providers and admins to insert experiences
+DROP POLICY IF EXISTS "Approved providers can insert experience" ON public.experience;
+DROP POLICY IF EXISTS "Authenticated providers can insert experience" ON public.experience;
+DROP POLICY IF EXISTS "Providers can insert experience" ON public.experience;
+CREATE POLICY "Authenticated providers can insert experience"
+    ON public.experience FOR INSERT
+    TO authenticated
+    WITH CHECK (true);
+
+-- Allow authenticated providers to update their own experiences
+DROP POLICY IF EXISTS "Providers can update own experience" ON public.experience;
+CREATE POLICY "Providers can update own experience"
+    ON public.experience FOR UPDATE
+    TO authenticated
+    USING (
+        auth.uid()::text = user_id 
+        OR auth.uid()::text = provider_id 
+        OR public.is_admin(auth.uid())
+    )
+    WITH CHECK (
+        auth.uid()::text = user_id 
+        OR auth.uid()::text = provider_id 
+        OR public.is_admin(auth.uid())
+    );
+
+-- Allow authenticated providers to delete their own experiences
+DROP POLICY IF EXISTS "Providers can delete own experience" ON public.experience;
+CREATE POLICY "Providers can delete own experience"
+    ON public.experience FOR DELETE
+    TO authenticated
+    USING (
+        auth.uid()::text = user_id 
+        OR auth.uid()::text = provider_id 
+        OR public.is_admin(auth.uid())
+    );
+
 

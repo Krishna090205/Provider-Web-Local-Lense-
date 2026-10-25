@@ -1533,26 +1533,20 @@ export async function createListing(
       const expPayload = listingToExperienceRow(newListing, effectiveEmail || undefined);
 
       // Insert directly into public.experience table in Supabase
-      const insertPromise = supabase
+      const { data, error } = await supabase
         .from('experience')
         .insert(expPayload)
         .select();
 
-      const timeoutPromise = new Promise<{ data: null; error: { message: string } }>((resolve) =>
-        setTimeout(() => resolve({ data: null, error: { message: 'Database response delayed' } }), 6000)
-      );
-
-      const res = await Promise.race([insertPromise, timeoutPromise]) as any;
-
-      if (!res.error && res.data && res.data.length > 0) {
-        const mapped = experienceRowToListing(res.data[0]);
+      if (!error && data && data.length > 0) {
+        const mapped = experienceRowToListing(data[0]);
         const listings = getLocalListings();
         const withoutOld = listings.filter(l => l.id !== mapped.id);
         saveLocalListings([mapped, ...withoutOld]);
         return mapped;
       }
-      if (res.error) {
-        console.warn('Supabase experience insert notice:', res.error.message);
+      if (error) {
+        console.warn('Supabase experience insert notice:', error.message);
       }
     } catch (e: unknown) {
       console.warn('Supabase createListing notice, saving to local cache:', e);
@@ -1595,20 +1589,14 @@ export async function updateListing(id: string, updates: Partial<Listing>): Prom
         owner_id: effectiveOwnerId || undefined
       }, effectiveEmail || undefined);
 
-      const updatePromise = supabase
+      const { data, error } = await supabase
         .from('experience')
         .update(expPayload)
         .eq('experience_id', id)
         .select();
 
-      const timeoutPromise = new Promise<{ data: null; error: { message: string } }>((resolve) =>
-        setTimeout(() => resolve({ data: null, error: { message: 'Database response delayed' } }), 6000)
-      );
-
-      const res = await Promise.race([updatePromise, timeoutPromise]) as any;
-
-      if (!res.error && res.data && res.data.length > 0) {
-        const mapped = experienceRowToListing(res.data[0]);
+      if (!error && data && data.length > 0) {
+        const mapped = experienceRowToListing(data[0]);
         const index = listings.findIndex(l => l.id === id);
         if (index !== -1) {
           listings[index] = mapped;
