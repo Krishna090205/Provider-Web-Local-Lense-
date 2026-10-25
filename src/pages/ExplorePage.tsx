@@ -13,6 +13,21 @@ import { ListingCard } from '../components/ListingCard';
 import { SkeletonCard } from '../components/SkeletonCard';
 import { MapComponent } from '../components/MapComponent';
 
+// Haversine distance calculator in kilometers
+const getDistanceKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+  const R = 6371; // Earth radius in km
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLon = (lon2 - lon1) * (Math.PI / 180);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * (Math.PI / 180)) *
+      Math.cos(lat2 * (Math.PI / 180)) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+};
+
 export const ExplorePage: React.FC = () => {
   const { t } = useLanguage();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -28,6 +43,26 @@ export const ExplorePage: React.FC = () => {
   const [showMapPreview, setShowMapPreview] = useState<boolean>(false);
   const [onlyMuseums, setOnlyMuseums] = useState<boolean>(false);
   const [selectedSpotlightId, setSelectedSpotlightId] = useState<string | null>(null);
+  const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [hasLocationPermission, setHasLocationPermission] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && 'geolocation' in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setUserCoords({
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+          });
+          setHasLocationPermission(true);
+        },
+        () => {
+          setHasLocationPermission(false);
+        },
+        { timeout: 6000, maximumAge: 600000 }
+      );
+    }
+  }, []);
 
   // TanStack Query for listings: all experiences fetched for Explore page
   const { data: rawListings = [], isLoading: loading } = useListings({
@@ -303,6 +338,149 @@ export const ExplorePage: React.FC = () => {
     </div>
   );
 
+  // Compact Explore Nearby experiences computation
+  const nearbyExperiences = useMemo(() => {
+    if (!rawListings || rawListings.length === 0) return [];
+
+    // Reference location: user coordinates if available -> otherwise active spotlight -> otherwise area/Mumbai center
+    const refLat = userCoords ? userCoords.lat : (activeSpotlightListing?.lat || 18.94);
+    const refLng = userCoords ? userCoords.lng : (activeSpotlightListing?.lng || 72.84);
+
+    // Filter out the active spotlight listing if selected to avoid duplication
+    let candidates = rawListings.filter(l => l.id !== selectedSpotlightId);
+
+    // If no user location permission and a specific area is filtered, prioritize experiences in that area
+    if (!userCoords && areaFilter !== 'all') {
+      const areaMatches = candidates.filter(l => l.area.toLowerCase() === areaFilter.toLowerCase());
+      if (areaMatches.length >= 2) {
+        candidates = areaMatches;
+      }
+    }
+
+    const withDist = candidates.map(item => ({
+      item,
+      distKm: getDistanceKm(refLat, refLng, item.lat, item.lng),
+    }));
+
+    withDist.sort((a, b) => a.distKm - b.distKm);
+
+    return withDist.slice(0, 4).map(x => ({
+      ...x.item,
+      distanceKm: x.distKm,
+    }));
+  }, [rawListings, userCoords, activeSpotlightListing, selectedSpotlightId, areaFilter]);
+
+  const categoryColors: Record<string, string> = {
+    hotels: 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30',
+    restaurants: 'bg-rose-500/20 text-rose-400 border-rose-500/30',
+    shops: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
+    attractions: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30',
+    forts: 'bg-amber-500/20 text-amber-500 border-amber-500/30',
+  };
+
+  const renderExploreNearby = () => {
+    return (
+      <div className="glass-panel p-4 rounded-2xl border border-sunset-border shadow-sm space-y-3 animate-fade-in">
+        <div className="flex items-center justify-between gap-2 border-b border-sunset-border/60 pb-2.5">
+          <div className="flex items-center gap-2">
+            <Compass className="w-4 h-4 text-sunset-accent" />
+            <h4 className="font-serif font-bold text-sm text-sunset-text">Explore Nearby</h4>
+            {hasLocationPermission && (
+              <span className="text-[10px] bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full font-bold">
+                Near You
+              </span>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setCategory('all');
+              setAreaFilter('all');
+              setSearchQuery('');
+              setPriceFilter('all');
+              window.scrollTo({ top: 300, behavior: 'smooth' });
+            }}
+            className="text-[11px] text-sunset-accent hover:underline font-semibold flex items-center gap-1 transition-colors"
+          >
+            <span>View All Experiences</span>
+            <span aria-hidden="true">→</span>
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 gap-2.5">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="flex items-center gap-2.5 p-2 rounded-xl bg-sunset-bg/40 border border-sunset-border animate-pulse">
+                <div className="w-14 h-14 rounded-lg bg-sunset-border/60 flex-shrink-0" />
+                <div className="space-y-1.5 flex-1 min-w-0">
+                  <div className="h-3 w-3/4 bg-sunset-border/60 rounded" />
+                  <div className="h-2.5 w-1/2 bg-sunset-border/40 rounded" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : nearbyExperiences.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 gap-2.5">
+            {nearbyExperiences.map((place) => {
+              const coverPhoto = place.photos?.find(p => p.is_cover)?.url ||
+                place.photos?.[0]?.url ||
+                'https://images.unsplash.com/photo-1570168007204-dfb528c6958f?auto=format&fit=crop&w=400&q=80';
+              const badgeStyle = categoryColors[place.category] || 'bg-sunset-accent/15 text-sunset-accent border-sunset-accent/30';
+
+              return (
+                <Link
+                  key={`nearby-${place.id}`}
+                  to={`/listings/${place.id}`}
+                  className="flex items-center gap-2.5 p-2 rounded-xl bg-sunset-bg/50 hover:bg-sunset-bg hover:border-sunset-accent/40 border border-sunset-border transition-all group"
+                >
+                  <img
+                    src={coverPhoto}
+                    alt={place.name}
+                    className="w-14 h-14 rounded-lg object-cover flex-shrink-0 border border-sunset-border group-hover:scale-105 transition-transform"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-1">
+                      <h5 className="text-xs font-bold font-serif text-sunset-text truncate group-hover:text-sunset-accent transition-colors">
+                        {place.name.replace('[Sample]', '').trim()}
+                      </h5>
+                      {place.rating > 0 && (
+                        <span className="text-[10px] font-semibold text-amber-400 flex items-center gap-0.5 flex-shrink-0">
+                          ⭐ {place.rating.toFixed(1)}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5 text-[11px] text-sunset-muted mt-0.5">
+                      <span className="truncate">{place.area}</span>
+                      {place.category && (
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded border font-semibold capitalize ${badgeStyle}`}>
+                          {t(`categories.${place.category}`) || place.category}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between gap-1 text-[10px] mt-0.5">
+                      {place.price_level ? (
+                        <span className="text-sunset-accent font-medium">{place.price_level}</span>
+                      ) : (
+                        <span />
+                      )}
+                      {hasLocationPermission && (
+                        <span className="text-sunset-muted/70">{place.distanceKm.toFixed(1)} km</span>
+                      )}
+                    </div>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="p-4 text-center rounded-xl bg-sunset-bg/40 border border-sunset-border text-xs text-sunset-muted">
+            No nearby experiences found.
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="min-h-screen pt-28 pb-20 px-4 sm:px-6 lg:px-8 xl:px-12 max-w-[1600px] w-full mx-auto text-sunset-text transition-colors duration-200">
       
@@ -533,13 +711,13 @@ export const ExplorePage: React.FC = () => {
             )}
           </div>
 
-          {/* Right Side: Interactive Map */}
-          <div className="lg:col-span-5 space-y-4 lg:sticky lg:top-24">
+          {/* Right Side: Interactive Map & Explore Nearby */}
+          <div className="lg:col-span-5 space-y-4 lg:sticky lg:top-24 lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto scrollbar-none pb-2">
             <div className="glass-panel p-3.5 sm:p-4 rounded-3xl border border-sunset-border shadow-lg space-y-2.5">
               <MapComponent
                 center={activeSpotlightListing ? [activeSpotlightListing.lat, activeSpotlightListing.lng] : [18.94, 72.84]}
                 zoom={activeSpotlightListing ? 14 : 11}
-                className="h-[460px] sm:h-[520px] lg:h-[calc(100vh-14rem)] min-h-[440px] max-h-[720px] w-full rounded-2xl"
+                className="h-[360px] sm:h-[400px] lg:h-[420px] w-full rounded-2xl"
                 markers={mapMarkers}
                 onMarkerClick={(m) => setSelectedSpotlightId(m.id)}
               />
@@ -557,6 +735,9 @@ export const ExplorePage: React.FC = () => {
 
             {/* Destination Spotlight Banner (when a marker is clicked in split view) */}
             {selectedSpotlightId && activeSpotlightListing && renderSpotlight()}
+
+            {/* Compact Explore Nearby Section below the map */}
+            {renderExploreNearby()}
           </div>
         </div>
       ) : (
@@ -585,6 +766,9 @@ export const ExplorePage: React.FC = () => {
               </div>
 
               {selectedSpotlightId && activeSpotlightListing && renderSpotlight()}
+
+              {/* Compact Explore Nearby Section below preview map */}
+              {renderExploreNearby()}
             </div>
           )}
 
