@@ -69,3 +69,46 @@ CREATE POLICY "Admins full management of profiles"
     ON public.profiles FOR ALL
     TO authenticated
     USING (public.is_admin(auth.uid()));
+
+-- 3. Automatic trigger to create profiles safely via SECURITY DEFINER (bypasses RLS)
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+BEGIN
+  INSERT INTO public.profiles (id, full_name, email, role, provider_status)
+  VALUES (
+    new.id,
+    COALESCE(new.raw_user_meta_data->>'full_name', new.raw_user_meta_data->>'name', split_part(new.email, '@', 1)),
+    new.email,
+    COALESCE(new.raw_user_meta_data->>'role', 'provider'),
+    COALESCE(new.raw_user_meta_data->>'provider_status', 'pending')
+  )
+  ON CONFLICT (id) DO UPDATE SET
+    email = EXCLUDED.email,
+    full_name = COALESCE(public.profiles.full_name, EXCLUDED.full_name),
+    updated_at = NOW();
+  RETURN new;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- 4. Backfill any existing auth users who are missing a row in public.profiles
+INSERT INTO public.profiles (id, full_name, email, role, provider_status)
+SELECT 
+    u.id,
+    COALESCE(u.raw_user_meta_data->>'full_name', u.raw_user_meta_data->>'name', split_part(u.email, '@', 1)),
+    u.email,
+    COALESCE(u.raw_user_meta_data->>'role', 'provider'),
+    COALESCE(u.raw_user_meta_data->>'provider_status', 'pending')
+FROM auth.users u
+LEFT JOIN public.profiles p ON p.id = u.id
+WHERE p.id IS NULL
+ON CONFLICT (id) DO NOTHING;
+
