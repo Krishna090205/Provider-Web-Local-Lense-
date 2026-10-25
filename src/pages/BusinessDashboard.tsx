@@ -225,7 +225,11 @@ export const BusinessDashboard: React.FC = () => {
         toast.error(res.error);
       } else if (res.url) {
         setValue('photoUrl', res.url, { shouldValidate: true });
-        toast.success('Cover photo uploaded successfully!');
+        if (res.isStorage) {
+          toast.success('Cover photo uploaded to Supabase Storage!');
+        } else {
+          toast.success('Cover photo optimized & attached!');
+        }
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Photo upload failed';
@@ -317,14 +321,14 @@ export const BusinessDashboard: React.FC = () => {
       setModalOpen(false);
       setEditingId(null);
       reset();
-      await refetchListings();
+      refetchListings();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Notice while saving listing';
       toast.info(msg);
       setModalOpen(false);
       setEditingId(null);
       reset();
-      await refetchListings();
+      refetchListings();
     }
   };
 

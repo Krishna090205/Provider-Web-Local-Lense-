@@ -604,6 +604,7 @@ export function listingToExperienceRow(listing: Partial<Listing>, providerEmail?
     provider_id: ownerId,
     user_id: ownerId,
     provider_email: effectiveEmail,
+    status: listing.status || 'approved',
     last_verified: new Date().toISOString()
   };
 }
@@ -1538,7 +1539,7 @@ export async function createListing(
         .select();
 
       const timeoutPromise = new Promise<{ data: null; error: { message: string } }>((resolve) =>
-        setTimeout(() => resolve({ data: null, error: { message: 'Database response delayed' } }), 12000)
+        setTimeout(() => resolve({ data: null, error: { message: 'Database response delayed' } }), 6000)
       );
 
       const res = await Promise.race([insertPromise, timeoutPromise]) as any;
@@ -1594,14 +1595,20 @@ export async function updateListing(id: string, updates: Partial<Listing>): Prom
         owner_id: effectiveOwnerId || undefined
       }, effectiveEmail || undefined);
 
-      const { data, error } = await supabase
+      const updatePromise = supabase
         .from('experience')
         .update(expPayload)
         .eq('experience_id', id)
         .select();
 
-      if (!error && data && data.length > 0) {
-        const mapped = experienceRowToListing(data[0]);
+      const timeoutPromise = new Promise<{ data: null; error: { message: string } }>((resolve) =>
+        setTimeout(() => resolve({ data: null, error: { message: 'Database response delayed' } }), 6000)
+      );
+
+      const res = await Promise.race([updatePromise, timeoutPromise]) as any;
+
+      if (!res.error && res.data && res.data.length > 0) {
+        const mapped = experienceRowToListing(res.data[0]);
         const index = listings.findIndex(l => l.id === id);
         if (index !== -1) {
           listings[index] = mapped;
@@ -1678,10 +1685,65 @@ export async function deleteListing(id: string): Promise<boolean> {
 export interface UploadPhotoResult {
   url?: string;
   error?: string;
+  isStorage?: boolean;
 }
 
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024; // 5MB
 const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+
+async function compressImageToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve) => {
+    if (typeof window === 'undefined' || typeof Image === 'undefined') {
+      const reader = new FileReader();
+      reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+      reader.onerror = () => resolve('');
+      reader.readAsDataURL(file);
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (readerEvent) => {
+      const dataUrl = readerEvent.target?.result as string;
+      const img = new Image();
+      img.onload = () => {
+        try {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 1200;
+          const MAX_HEIGHT = 800;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height = Math.round((height * MAX_WIDTH) / width);
+              width = MAX_WIDTH;
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width = Math.round((width * MAX_HEIGHT) / height);
+              height = MAX_HEIGHT;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            resolve(canvas.toDataURL('image/jpeg', 0.8));
+            return;
+          }
+        } catch {
+          // Fallback to original data URL if canvas manipulation fails
+        }
+        resolve(dataUrl);
+      };
+      img.onerror = () => resolve(dataUrl);
+      img.src = dataUrl;
+    };
+    reader.onerror = () => resolve('');
+    reader.readAsDataURL(file);
+  });
+}
 
 export async function uploadListingPhoto(
   file: File,
@@ -1723,31 +1785,22 @@ export async function uploadListingPhoto(
           .getPublicUrl(cleanName);
         
         if (publicUrlData?.publicUrl) {
-          return { url: publicUrlData.publicUrl };
+          return { url: publicUrlData.publicUrl, isStorage: true };
         }
       } else if (error) {
-        console.warn('Supabase storage upload error, falling back to local data URL:', error.message);
+        console.warn('Supabase storage upload error, falling back to optimized local image:', error.message);
       }
     } catch (e) {
-      console.warn('Supabase storage exception, falling back to local data URL:', e);
+      console.warn('Supabase storage exception, falling back to optimized local image:', e);
     }
   }
 
-  // Fallback to data URL so provider flow continues smoothly offline or in mock demo
-  return new Promise<UploadPhotoResult>((resolve) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        resolve({ url: reader.result });
-      } else {
-        resolve({ error: 'Failed to process image file.' });
-      }
-    };
-    reader.onerror = () => {
-      resolve({ error: 'Error reading file.' });
-    };
-    reader.readAsDataURL(file);
-  });
+  // Fallback to compressed data URL so provider flow continues smoothly without choking payload size
+  const compressedUrl = await compressImageToDataUrl(file);
+  if (compressedUrl) {
+    return { url: compressedUrl, isStorage: false };
+  }
+  return { error: 'Failed to process image file.' };
 }
 
 export async function deleteListingPhoto(photoUrl: string): Promise<boolean> {
