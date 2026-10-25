@@ -51,7 +51,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             .from('profiles')
             .select('*')
             .eq('id', session.user.id)
-            .single();
+            .maybeSingle();
 
           const meta = session.user.user_metadata || {};
           const googleName = meta.full_name || meta.name || session.user.email?.split('@')[0] || 'User';
@@ -363,7 +363,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password: pass });
         if (error) return { success: false, error: error.message };
         if (data.user) {
-          const { data: profile } = await supabase.from('profiles').select('*').eq('id', data.user.id).single();
+          const { data: profile } = await supabase.from('profiles').select('*').eq('id', data.user.id).maybeSingle();
           const rawProfile = profile as Record<string, unknown> | null;
           const meta = data.user.user_metadata || {};
           const metaRole = (meta.role as UserRole) || (data.user.app_metadata?.role as UserRole);
@@ -595,18 +595,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     // 4. Permanently persist in Supabase database and user auth metadata
     if (isSupabaseConfigured) {
       try {
-        // A. Upsert into public.profiles table so it permanently exists even if not created prior
+        // A. Update public.profiles table with permitted profile fields
         const { error: profileError } = await supabase
           .from('profiles')
-          .upsert({
-            id: user.id,
-            name: cleanName,
-            role: user.role,
-            provider_status: user.provider_status || (user.role === 'provider' ? 'pending' : 'approved'),
-            avatar: avatar || user.avatar || null,
+          .update({
+            full_name: cleanName,
+            avatar_url: avatar || user.avatar || null,
             business_name: cleanBiz || null,
             updated_at: new Date().toISOString()
-          });
+          })
+          .eq('id', user.id);
 
         if (profileError) {
           console.warn('Supabase public.profiles update notice:', profileError.message);

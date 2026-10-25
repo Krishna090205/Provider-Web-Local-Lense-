@@ -21,8 +21,11 @@ export function useFavorites() {
             saveLocalFavorites(ids);
             return;
           }
-        } catch (e) {
-          console.warn('Could not load favorites from Supabase', e);
+          if (error && error.code !== 'PGRST205') {
+            console.warn('Supabase favorites query notice:', error.message);
+          }
+        } catch {
+          // Graceful fallback to client storage
         }
       }
       setFavoriteIds(getLocalFavorites());
@@ -48,12 +51,14 @@ export function useFavorites() {
     if (user && isSupabaseConfigured) {
       try {
         if (exists) {
-          await supabase.from('favorites').delete().eq('user_id', user.id).eq('listing_id', listingId);
+          const { error } = await supabase.from('favorites').delete().eq('user_id', user.id).eq('listing_id', listingId);
+          if (error && error.code !== 'PGRST205') console.warn('Supabase favorite delete notice:', error.message);
         } else {
-          await supabase.from('favorites').insert({ user_id: user.id, listing_id: listingId });
+          const { error } = await supabase.from('favorites').insert({ user_id: user.id, listing_id: listingId });
+          if (error && error.code !== 'PGRST205') console.warn('Supabase favorite insert notice:', error.message);
         }
-      } catch (e) {
-        console.warn('Failed to sync favorite with Supabase', e);
+      } catch {
+        // Fallback already saved locally
       }
     }
   };

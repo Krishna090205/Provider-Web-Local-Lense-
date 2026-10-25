@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { useForm } from 'react-hook-form';
+import { useForm, FieldErrors } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
   Building, Plus, Edit3, Trash2, Eye, Star, MessageSquare, Check,
@@ -329,6 +329,19 @@ export const BusinessDashboard: React.FC = () => {
       setEditingId(null);
       reset();
       refetchListings();
+    }
+  };
+
+  const onInvalid = (formErrors: FieldErrors<ListingFormValues>) => {
+    if (import.meta.env.DEV) {
+      console.warn('Listing form validation issues:', Object.keys(formErrors).map(field => ({
+        field,
+        message: formErrors[field as keyof ListingFormValues]?.message
+      })));
+    }
+    const firstKey = Object.keys(formErrors)[0] as keyof ListingFormValues;
+    if (firstKey && formErrors[firstKey]?.message) {
+      toast.error(String(formErrors[firstKey]?.message));
     }
   };
 
@@ -703,7 +716,7 @@ export const BusinessDashboard: React.FC = () => {
               </button>
             </div>
 
-            <form onSubmit={handleSubmit(onSaveListing)} className="space-y-4">
+            <form onSubmit={handleSubmit(onSaveListing, onInvalid)} className="space-y-4">
               
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 
