@@ -1,3 +1,8 @@
+
+
+
+
+
 export type Json =
   | string
   | number
@@ -204,6 +209,8 @@ export interface Database {
           provider_id: string | null;
           user_id: string | null;
           provider_email: string | null;
+          status: string | null;
+          id: number;
         };
         Insert: {
           experience_id?: string | null;
@@ -258,6 +265,8 @@ export interface Database {
           provider_id?: string | null;
           user_id?: string | null;
           provider_email?: string | null;
+          status?: string | null;
+          id?: number;
         };
         Update: {
           experience_id?: string | null;
@@ -312,6 +321,8 @@ export interface Database {
           provider_id?: string | null;
           user_id?: string | null;
           provider_email?: string | null;
+          status?: string | null;
+          id?: number;
         };
         Relationships: [];
       };

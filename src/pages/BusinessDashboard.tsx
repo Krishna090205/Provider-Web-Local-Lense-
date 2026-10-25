@@ -22,7 +22,8 @@ import {
   markNotificationAsRead,
   uploadListingPhoto,
   getLocalProviders,
-  updateProviderApproval
+  updateProviderApproval,
+  fetchLiveProviderStatus
 } from '../lib/store';
 import { useToast } from '../components/Toast';
 
@@ -80,7 +81,7 @@ export const BusinessDashboard: React.FC = () => {
 
   // Compute live provider status checking both authenticated profile and local store
   const computeStatus = (): ProviderStatus => {
-    const local = user ? getLocalProviders().find(p => p.id === user.id || (p.email && p.email === user.email)) : null;
+    const local = user ? getLocalProviders().find(p => p.id === user.id || (p.email && p.email.toLowerCase() === user.email?.toLowerCase())) : null;
     if (user?.provider_status === 'approved' || local?.provider_status === 'approved') return 'approved';
     if (user?.provider_status === 'rejected' || local?.provider_status === 'rejected') return 'rejected';
     if (user?.provider_status === 'suspended' || local?.provider_status === 'suspended') return 'suspended';
@@ -90,13 +91,29 @@ export const BusinessDashboard: React.FC = () => {
   const [providerStatus, setProviderStatus] = useState<ProviderStatus>(computeStatus);
 
   useEffect(() => {
-    const syncStatus = () => {
+    let isMounted = true;
+    const syncStatus = async () => {
+      // 1. Immediate sync from memory/local store
       setProviderStatus(computeStatus());
+
+      // 2. Query live database to catch approvals made on other machines
+      if (user?.id || user?.email) {
+        try {
+          const live = await fetchLiveProviderStatus(user.id, user.email);
+          if (isMounted && live.status && live.status !== computeStatus()) {
+            setProviderStatus(live.status);
+          }
+        } catch (err) {
+          console.warn('syncStatus live check notice:', err);
+        }
+      }
     };
+
     syncStatus();
     window.addEventListener('locallens_user_updated', syncStatus);
     window.addEventListener('storage', syncStatus);
     return () => {
+      isMounted = false;
       window.removeEventListener('locallens_user_updated', syncStatus);
       window.removeEventListener('storage', syncStatus);
     };
@@ -110,12 +127,17 @@ export const BusinessDashboard: React.FC = () => {
       if (refreshUser) {
         await refreshUser();
       }
-      const newStatus = computeStatus();
+      const live = await fetchLiveProviderStatus(user?.id, user?.email);
+      const newStatus = live.status;
       setProviderStatus(newStatus);
       if (newStatus === 'approved') {
         toast.success('Your provider account is approved! Listing creation is now unlocked.');
+      } else if (newStatus === 'rejected') {
+        toast.warning(live.note ? `Application was declined: ${live.note}` : 'Your application was declined by the administrator.');
+      } else if (newStatus === 'suspended') {
+        toast.error('Your provider account is currently suspended.');
       } else {
-        toast.info('Status is currently pending. If you approved in Supabase, ensure the "provider_status" column exists in your profiles table.');
+        toast.info('Your provider application is currently pending administrator review.');
       }
     } catch {
       toast.error('Failed to refresh status from database.');

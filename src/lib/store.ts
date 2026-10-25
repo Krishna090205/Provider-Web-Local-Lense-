@@ -1001,7 +1001,7 @@ export async function fetchProviders(): Promise<Profile[]> {
     try {
       const { data: expRows } = await supabase
         .from('experience')
-        .select('provider_id, provider_email, source_name, last_verified')
+        .select('provider_id, user_id, provider_email, source_name, last_verified, status')
         .not('provider_id', 'is', null)
         .limit(100);
 
@@ -1009,6 +1009,11 @@ export async function fetchProviders(): Promise<Profile[]> {
         for (const exp of expRows) {
           const provId = exp.provider_id as string;
           const provEmail = exp.provider_email as string;
+          const expStatus = exp.status as string;
+          const mappedStatus: ProviderStatus = (expStatus === 'approved' || expStatus === 'rejected' || expStatus === 'suspended')
+            ? (expStatus as ProviderStatus)
+            : 'pending';
+
           const key = provId || provEmail?.toLowerCase();
           if (key && !providerMap.has(key)) {
             providerMap.set(key, {
@@ -1017,9 +1022,15 @@ export async function fetchProviders(): Promise<Profile[]> {
               role: 'provider',
               name: (exp.source_name as string) || 'Local Merchant',
               business_name: (exp.source_name as string) || 'Registered Establishment',
-              provider_status: 'pending',
+              provider_status: mappedStatus,
               created_at: (exp.last_verified as string) || new Date().toISOString()
             });
+          } else if (key && providerMap.has(key)) {
+            // Keep approved status if already marked approved in any experience
+            const existing = providerMap.get(key)!;
+            if (existing.provider_status !== 'approved' && mappedStatus === 'approved') {
+              existing.provider_status = 'approved';
+            }
           }
         }
       }
@@ -1027,6 +1038,146 @@ export async function fetchProviders(): Promise<Profile[]> {
   }
 
   return Array.from(new Set(providerMap.values()));
+}
+
+const isUUID = (str?: string | null): boolean => {
+  if (!str) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str.trim());
+};
+
+export async function fetchLiveProviderStatus(
+  userId?: string | null,
+  userEmail?: string | null
+): Promise<{ status: ProviderStatus; note?: string; reviewedBy?: string; reviewedAt?: string }> {
+  const currentUser = getStoredUser();
+  const effectiveId = userId || currentUser?.id || null;
+  const effectiveEmail = (userEmail || currentUser?.email || '').trim().toLowerCase() || null;
+
+  // 1. Check Supabase profiles table
+  if (isSupabaseConfigured) {
+    try {
+      if (effectiveId && isUUID(effectiveId)) {
+        const { data: profById } = await supabase
+          .from('profiles')
+          .select('provider_status, provider_review_note, reviewed_by, reviewed_at')
+          .eq('id', effectiveId)
+          .maybeSingle();
+
+        if (profById?.provider_status) {
+          const st = profById.provider_status as ProviderStatus;
+          if (currentUser && (currentUser.id === effectiveId || currentUser.email === effectiveEmail)) {
+            currentUser.provider_status = st;
+            currentUser.provider_review_note = profById.provider_review_note || undefined;
+            saveStoredUser(currentUser);
+          }
+          return {
+            status: st,
+            note: profById.provider_review_note || undefined,
+            reviewedBy: profById.reviewed_by || undefined,
+            reviewedAt: profById.reviewed_at || undefined
+          };
+        }
+      }
+
+      if (effectiveEmail) {
+        const { data: profByEmail } = await supabase
+          .from('profiles')
+          .select('provider_status, provider_review_note, reviewed_by, reviewed_at')
+          .eq('email', effectiveEmail)
+          .maybeSingle();
+
+        if (profByEmail?.provider_status) {
+          const st = profByEmail.provider_status as ProviderStatus;
+          if (currentUser && (currentUser.email === effectiveEmail || currentUser.id === effectiveId)) {
+            currentUser.provider_status = st;
+            currentUser.provider_review_note = profByEmail.provider_review_note || undefined;
+            saveStoredUser(currentUser);
+          }
+          return {
+            status: st,
+            note: profByEmail.provider_review_note || undefined,
+            reviewedBy: profByEmail.reviewed_by || undefined,
+            reviewedAt: profByEmail.reviewed_at || undefined
+          };
+        }
+      }
+    } catch (profCheckErr) {
+      console.warn('fetchLiveProviderStatus profiles check error:', profCheckErr);
+    }
+
+    // 2. Query Supabase public.experience table for provider status
+    // In Supabase, the canonical approval field for experiences and provider listings is 'status'
+    try {
+      const orParts: string[] = [];
+      if (effectiveId) {
+        orParts.push(`provider_id.eq.${effectiveId}`);
+        orParts.push(`user_id.eq.${effectiveId}`);
+      }
+      if (effectiveEmail) {
+        orParts.push(`provider_email.eq.${effectiveEmail}`);
+      }
+
+      if (orParts.length > 0) {
+        const { data: expRows } = await supabase
+          .from('experience')
+          .select('status, last_verified')
+          .or(orParts.join(','))
+          .limit(10);
+
+        if (expRows && expRows.length > 0) {
+          if (expRows.some(e => e.status === 'approved')) {
+            if (currentUser && (currentUser.id === effectiveId || currentUser.email === effectiveEmail)) {
+              currentUser.provider_status = 'approved';
+              saveStoredUser(currentUser);
+            }
+            return { status: 'approved' };
+          }
+          if (expRows.some(e => e.status === 'suspended')) {
+            return { status: 'suspended' };
+          }
+          if (expRows.every(e => e.status === 'rejected')) {
+            return { status: 'rejected' };
+          }
+        }
+      }
+    } catch (expCheckErr) {
+      console.warn('fetchLiveProviderStatus experience check notice:', expCheckErr);
+    }
+  }
+
+  // 3. Check local registered accounts and mock stores
+  const localProviders = getLocalProviders();
+  const localMatch = localProviders.find(p => (effectiveId && p.id === effectiveId) || (effectiveEmail && p.email?.toLowerCase() === effectiveEmail));
+  if (localMatch?.provider_status) {
+    return {
+      status: localMatch.provider_status,
+      note: localMatch.provider_review_note,
+      reviewedBy: localMatch.reviewed_by,
+      reviewedAt: localMatch.reviewed_at
+    };
+  }
+
+  const regAccounts = getRegisteredAccounts();
+  const regMatch = regAccounts.find(p => (effectiveId && p.id === effectiveId) || (effectiveEmail && p.email?.toLowerCase() === effectiveEmail));
+  if (regMatch?.provider_status) {
+    return {
+      status: regMatch.provider_status,
+      note: regMatch.provider_review_note,
+      reviewedBy: regMatch.reviewed_by,
+      reviewedAt: regMatch.reviewed_at
+    };
+  }
+
+  if (currentUser?.provider_status) {
+    return {
+      status: currentUser.provider_status,
+      note: currentUser.provider_review_note,
+      reviewedBy: currentUser.reviewed_by,
+      reviewedAt: currentUser.reviewed_at
+    };
+  }
+
+  return { status: 'pending' };
 }
 
 export async function updateProviderApproval(
@@ -1039,36 +1190,85 @@ export async function updateProviderApproval(
 
   let supabaseUpdatedProfile: Profile | null = null;
 
+  // Retrieve provider metadata to ensure email and IDs are available for persistent updates
+  const providers = getLocalProviders();
+  const regAccounts = getRegisteredAccounts();
+  const matchedProv = providers.find(p => p.id === providerId || (p.email && p.email.toLowerCase() === providerId.toLowerCase()))
+    || regAccounts.find(p => p.id === providerId || (p.email && p.email.toLowerCase() === providerId.toLowerCase()));
+  const providerEmail = matchedProv?.email || (providerId.includes('@') ? providerId : undefined);
+  const validAdminId = isUUID(adminId) ? adminId : null;
+
   if (isSupabaseConfigured) {
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .update({
-          provider_status: newStatus,
-          provider_review_note: note || null,
-          reviewed_by: adminId || null,
-          reviewed_at: reviewedAt
-        })
-        .eq('id', providerId)
-        .select()
-        .single();
-
-      if (!error && data) {
-        supabaseUpdatedProfile = data as Profile;
-      } else if (error) {
-        console.warn('Supabase updateProviderApproval note update warning:', error.message);
-        // Fallback: try updating just provider_status if review note columns do not exist yet in profiles table
+      // 1. Update in Supabase public.profiles if providerId is a UUID or has matching email
+      if (isUUID(providerId)) {
         try {
-          const { data: fallbackData, error: fallbackError } = await supabase
+          const { data, error } = await supabase
             .from('profiles')
-            .update({ provider_status: newStatus })
+            .update({
+              provider_status: newStatus,
+              provider_review_note: note || null,
+              reviewed_by: validAdminId,
+              reviewed_at: reviewedAt
+            })
             .eq('id', providerId)
             .select()
-            .single();
-          if (!fallbackError && fallbackData) {
-            supabaseUpdatedProfile = fallbackData as Profile;
+            .maybeSingle();
+
+          if (!error && data) {
+            supabaseUpdatedProfile = data as Profile;
           }
-        } catch {}
+        } catch (profErr) {
+          console.warn('Supabase updateProviderApproval profile id update notice:', profErr);
+        }
+      }
+
+      if (!supabaseUpdatedProfile && providerEmail) {
+        try {
+          const { data, error } = await supabase
+            .from('profiles')
+            .update({
+              provider_status: newStatus,
+              provider_review_note: note || null,
+              reviewed_by: validAdminId,
+              reviewed_at: reviewedAt
+            })
+            .eq('email', providerEmail.toLowerCase())
+            .select()
+            .maybeSingle();
+
+          if (!error && data) {
+            supabaseUpdatedProfile = data as Profile;
+          }
+        } catch (profEmailErr) {
+          console.warn('Supabase updateProviderApproval profile email update notice:', profEmailErr);
+        }
+      }
+
+      // 2. Persist approval status to public.experience table in Supabase
+      // Canonical status representation in experience table is 'status' ('approved', 'pending', etc.)
+      try {
+        const queryOrParts: string[] = [];
+        if (providerId) {
+          queryOrParts.push(`provider_id.eq.${providerId}`);
+          queryOrParts.push(`user_id.eq.${providerId}`);
+        }
+        if (matchedProv?.id && matchedProv.id !== providerId) {
+          queryOrParts.push(`provider_id.eq.${matchedProv.id}`);
+          queryOrParts.push(`user_id.eq.${matchedProv.id}`);
+        }
+        if (providerEmail) {
+          queryOrParts.push(`provider_email.eq.${providerEmail.toLowerCase()}`);
+        }
+
+        if (queryOrParts.length > 0) {
+          await supabase
+            .from('experience')
+            .update({ status: newStatus })
+            .or(queryOrParts.join(','));
+        }
+      } catch (expUpdateErr) {
+        console.warn('Supabase updateProviderApproval experience sync notice:', expUpdateErr);
       }
     } catch (e) {
       console.warn('Supabase updateProviderApproval error', e);
@@ -1076,8 +1276,7 @@ export async function updateProviderApproval(
   }
 
   // Update in local store ALWAYS so local cache and mock fallback stay synchronized
-  const providers = getLocalProviders();
-  const index = providers.findIndex(p => p.id === providerId || (p.email && p.email === providerId));
+  const index = providers.findIndex(p => p.id === providerId || (p.email && p.email.toLowerCase() === providerId.toLowerCase()));
   let updatedProvider: Profile | null = supabaseUpdatedProfile;
 
   if (index !== -1) {
@@ -1096,8 +1295,7 @@ export async function updateProviderApproval(
   }
 
   // Also sync with registered permanent accounts
-  const regAccounts = getRegisteredAccounts();
-  const regIdx = regAccounts.findIndex(p => p.id === providerId || (p.email && p.email === providerId));
+  const regIdx = regAccounts.findIndex(p => p.id === providerId || (p.email && p.email.toLowerCase() === providerId.toLowerCase()));
   if (regIdx !== -1) {
     regAccounts[regIdx].provider_status = newStatus;
     regAccounts[regIdx].provider_review_note = note || undefined;
@@ -1111,8 +1309,8 @@ export async function updateProviderApproval(
   const currentUser = getStoredUser();
   if (currentUser && (
     currentUser.id === providerId || 
-    (currentUser.email && (currentUser.email === providerId || currentUser.email === updatedProvider?.email)) || 
-    currentUser.id === updatedProvider?.id
+    (currentUser.email && (currentUser.email.toLowerCase() === providerId.toLowerCase() || (providerEmail && currentUser.email.toLowerCase() === providerEmail.toLowerCase()))) || 
+    (updatedProvider?.id && currentUser.id === updatedProvider.id)
   )) {
     currentUser.provider_status = newStatus;
     currentUser.provider_review_note = note;
@@ -1278,26 +1476,18 @@ export async function createListing(
   if (!isAdmin && currentUser?.role === 'provider') {
     let isApproved = currentUser.provider_status === 'approved';
 
-    // Verify against Supabase profiles table in case admin just approved
-    const checkId = currentUser.id || listingData.owner_id;
-    if (!isApproved && isSupabaseConfigured && checkId) {
-      try {
-        const { data: dbProfile } = await supabase
-          .from('profiles')
-          .select('provider_status, role')
-          .eq('id', checkId)
-          .single();
-        if (dbProfile?.provider_status === 'approved' || dbProfile?.role === 'admin') {
-          isApproved = true;
-          if (currentUser) {
-            currentUser.provider_status = 'approved';
-            saveStoredUser(currentUser);
-          }
-        }
-      } catch {}
+    // Verify against live database in case admin approved on another machine/session
+    if (!isApproved) {
+      const liveCheck = await fetchLiveProviderStatus(currentUser.id || listingData.owner_id, currentUser.email || listingData.owner_email);
+      if (liveCheck.status === 'approved') {
+        isApproved = true;
+        currentUser.provider_status = 'approved';
+        saveStoredUser(currentUser);
+      }
     }
 
     if (!isApproved) {
+      const checkId = currentUser.id || listingData.owner_id;
       const localProv = getLocalProviders().find(p => p.id === checkId);
       if (localProv?.provider_status === 'approved') {
         isApproved = true;

@@ -95,9 +95,40 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             || (rawProfile?.approval_status as ProviderStatus)
             || (rawProfile?.is_approved ? 'approved' : undefined);
 
+          // Check live experience records in Supabase if status is not yet approved in profiles
+          let expStatus: ProviderStatus | undefined;
+          if (isSupabaseConfigured && (!dbStatus || dbStatus === 'pending') && (session.user.id || session.user.email)) {
+            try {
+              const orParts: string[] = [];
+              if (session.user.id) {
+                orParts.push(`provider_id.eq.${session.user.id}`);
+                orParts.push(`user_id.eq.${session.user.id}`);
+              }
+              if (session.user.email) {
+                orParts.push(`provider_email.eq.${session.user.email.toLowerCase()}`);
+              }
+              const { data: expMatch } = await supabase
+                .from('experience')
+                .select('status')
+                .or(orParts.join(','))
+                .limit(10);
+
+              if (expMatch && expMatch.some(e => e.status === 'approved')) {
+                expStatus = 'approved';
+              } else if (expMatch && expMatch.some(e => e.status === 'suspended')) {
+                expStatus = 'suspended';
+              } else if (expMatch && expMatch.length > 0 && expMatch.every(e => e.status === 'rejected')) {
+                expStatus = 'rejected';
+              }
+            } catch (e) {
+              console.warn('refreshUser experience status check notice:', e);
+            }
+          }
+
           const resolvedStatus: ProviderStatus = permanentRole === 'admin'
             ? 'approved'
             : (dbStatus
+              || expStatus
               || (localMatch?.provider_status === 'approved' ? 'approved' : undefined)
               || existingAccount?.provider_status
               || localMatch?.provider_status
@@ -137,7 +168,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             try {
               await supabase.from('profiles').upsert({
                 id: session.user.id,
-                name: fullProfile.name,
                 full_name: fullProfile.name,
                 email: session.user.email,
                 role: permanentRole,
@@ -304,7 +334,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           try {
             await supabase.from('profiles').upsert({
               id: data.user.id,
-              name: name,
               full_name: name,
               email: email,
               role: safeRole,
@@ -389,7 +418,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             await supabase.from('profiles').upsert({
               id: data.user.id,
               full_name: p.name,
-              name: p.name,
               email: p.email || data.user.email,
               role: persistentRole,
               provider_status: persistentRole === 'admin' ? 'approved' : p.provider_status,
