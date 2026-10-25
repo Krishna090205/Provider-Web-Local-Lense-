@@ -49,11 +49,7 @@ DROP POLICY IF EXISTS "Users can insert own profile" ON public.profiles;
 CREATE POLICY "Users can insert own profile"
     ON public.profiles FOR INSERT
     TO authenticated
-    WITH CHECK (
-        auth.uid() = id
-        AND (role IS NULL OR role IN ('provider', 'tourist'))
-        AND (provider_status IS NULL OR provider_status = 'pending')
-    );
+    WITH CHECK (auth.uid() = id);
 
 -- Allow users to update their own profile fields (or admins full update)
 DROP POLICY IF EXISTS "Users can update own profile fields" ON public.profiles;

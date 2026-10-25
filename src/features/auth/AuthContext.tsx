@@ -312,20 +312,22 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           setUser(newProfile);
           saveStoredUser(newProfile);
 
-          // Guarantee upsert in Supabase public.profiles table
-          try {
-            await supabase.from('profiles').upsert({
-              id: data.user.id,
-              full_name: name,
-              email: email,
-              role: safeRole,
-              provider_status: providerStatus,
-              business_name: businessName || (safeRole === 'provider' ? name : null),
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString()
-            });
-          } catch (upsertErr) {
-            console.warn('Supabase profile upsert on signup notice:', upsertErr);
+          // If session is immediately established, persist profile in Supabase public.profiles table
+          if (data.session) {
+            try {
+              await supabase.from('profiles').upsert({
+                id: data.user.id,
+                full_name: name,
+                email: email,
+                role: safeRole,
+                provider_status: providerStatus,
+                business_name: businessName || (safeRole === 'provider' ? name : null),
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+              });
+            } catch (upsertErr) {
+              console.warn('Supabase profile upsert on signup notice:', upsertErr);
+            }
           }
 
           return { success: true };
