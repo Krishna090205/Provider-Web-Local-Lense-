@@ -129,9 +129,9 @@ export const ExplorePage: React.FC = () => {
     return listings[0] || null;
   }, [selectedSpotlightId, listings]);
 
-  // Pagination (12 items per page for expansive exploration)
+  // Pagination: 14 items per page in Split View (8 left, 6 right) and 12 in Grid View
   const [currentPage, setCurrentPage] = useState<number>(1);
-  const ITEMS_PER_PAGE = 12;
+  const itemsPerPage = viewMode === 'split' ? 14 : 12;
 
   // Sync category from URL if changes
   useEffect(() => {
@@ -143,15 +143,33 @@ export const ExplorePage: React.FC = () => {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [category, searchQuery, sortBy, areaFilter, priceFilter, onlyMuseums]);
+  }, [category, searchQuery, sortBy, areaFilter, priceFilter, onlyMuseums, viewMode]);
 
   // Paginated items
   const paginatedListings = useMemo(() => {
-    const start = (currentPage - 1) * ITEMS_PER_PAGE;
-    return listings.slice(start, start + ITEMS_PER_PAGE);
-  }, [listings, currentPage]);
+    const start = (currentPage - 1) * itemsPerPage;
+    return listings.slice(start, start + itemsPerPage);
+  }, [listings, currentPage, itemsPerPage]);
 
-  const totalPages = Math.ceil(listings.length / ITEMS_PER_PAGE) || 1;
+  const totalPages = Math.ceil(listings.length / itemsPerPage) || 1;
+
+  // Balanced distribution between left side and right side in Split View
+  const splitCount = useMemo(() => {
+    const total = paginatedListings.length;
+    if (total <= 2) return { left: total, right: 0 };
+    if (total <= 4) return { left: 2, right: total - 2 };
+    if (total <= 8) return { left: Math.ceil(total / 2), right: Math.floor(total / 2) };
+    const left = Math.min(8, Math.ceil(total * 0.55));
+    return { left, right: total - left };
+  }, [paginatedListings]);
+
+  const leftListings = useMemo(() => {
+    return paginatedListings.slice(0, splitCount.left);
+  }, [paginatedListings, splitCount]);
+
+  const rightListings = useMemo(() => {
+    return paginatedListings.slice(splitCount.left);
+  }, [paginatedListings, splitCount]);
 
   // Smart pagination items calculation (e.g., 1, 2, ..., totalPages with sliding window)
   const paginationItems = useMemo(() => {
@@ -688,57 +706,88 @@ export const ExplorePage: React.FC = () => {
 
       {/* Main View Content: Split View or Full-Width Grid */}
       {viewMode === 'split' ? (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start animate-fade-in">
-          {/* Left Side: Datas (Experience Cards) */}
-          <div className="lg:col-span-7 space-y-6">
-            {loading ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5 animate-fade-in">
-                {[1, 2, 3, 4, 5, 6].map((i) => (
-                  <SkeletonCard key={i} />
-                ))}
-              </div>
-            ) : paginatedListings.length > 0 ? (
-              <>
+        <div className="space-y-10 animate-fade-in">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8 items-start">
+            {/* Left Column: Experience Cards (Datas) */}
+            <div className="space-y-6">
+              {loading ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5 animate-fade-in">
-                  {paginatedListings.map((listing) => (
+                  {[1, 2, 3, 4, 5, 6].map((i) => (
+                    <SkeletonCard key={i} />
+                  ))}
+                </div>
+              ) : leftListings.length > 0 ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5 animate-fade-in">
+                  {leftListings.map((listing) => (
                     <ListingCard key={listing.id} listing={listing} />
                   ))}
                 </div>
-                {renderPagination()}
-              </>
-            ) : (
-              renderNoResults()
-            )}
-          </div>
-
-          {/* Right Side: Interactive Map & Explore Nearby */}
-          <div className="lg:col-span-5 space-y-4 lg:sticky lg:top-24 lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto scrollbar-none pb-2">
-            <div className="glass-panel p-3.5 sm:p-4 rounded-3xl border border-sunset-border shadow-lg space-y-2.5">
-              <MapComponent
-                center={activeSpotlightListing ? [activeSpotlightListing.lat, activeSpotlightListing.lng] : [18.94, 72.84]}
-                zoom={activeSpotlightListing ? 14 : 11}
-                className="h-[360px] sm:h-[400px] lg:h-[420px] w-full rounded-2xl"
-                markers={mapMarkers}
-                onMarkerClick={(m) => setSelectedSpotlightId(m.id)}
-              />
-
-              <div className="flex flex-wrap items-center justify-between text-xs text-sunset-muted px-2 pt-1 gap-2">
-                <span className="flex items-center gap-1.5">
-                  <MapPin className="w-3.5 h-3.5 text-sunset-accent" />
-                  <strong className="text-sunset-text">{mapMarkers.length}</strong> Plotted Destinations
-                </span>
-                <span className="text-[11px] bg-sunset-accent/10 text-sunset-accent px-2.5 py-0.5 rounded-full border border-sunset-accent/20">
-                  Click any marker to inspect
-                </span>
-              </div>
+              ) : (
+                renderNoResults()
+              )}
             </div>
 
-            {/* Destination Spotlight Banner (when a marker is clicked in split view) */}
-            {selectedSpotlightId && activeSpotlightListing && renderSpotlight()}
+            {/* Right Column: Interactive Map, Explore Nearby & Additional Cards */}
+            <div className="space-y-6">
+              <div className="glass-panel p-3.5 sm:p-4 rounded-3xl border border-sunset-border shadow-lg space-y-2.5">
+                <MapComponent
+                  center={activeSpotlightListing ? [activeSpotlightListing.lat, activeSpotlightListing.lng] : [18.94, 72.84]}
+                  zoom={activeSpotlightListing ? 14 : 11}
+                  className="h-[360px] sm:h-[400px] lg:h-[420px] w-full rounded-2xl"
+                  markers={mapMarkers}
+                  onMarkerClick={(m) => setSelectedSpotlightId(m.id)}
+                />
 
-            {/* Compact Explore Nearby Section below the map */}
-            {renderExploreNearby()}
+                <div className="flex flex-wrap items-center justify-between text-xs text-sunset-muted px-2 pt-1 gap-2">
+                  <span className="flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5 text-sunset-accent" />
+                    <strong className="text-sunset-text">{mapMarkers.length}</strong> Plotted Destinations
+                  </span>
+                  <span className="text-[11px] bg-sunset-accent/10 text-sunset-accent px-2.5 py-0.5 rounded-full border border-sunset-accent/20">
+                    Click any marker to inspect
+                  </span>
+                </div>
+              </div>
+
+              {/* Destination Spotlight Banner (when a marker is clicked in split view) */}
+              {selectedSpotlightId && activeSpotlightListing && renderSpotlight()}
+
+              {/* Compact Explore Nearby Section below the map */}
+              {renderExploreNearby()}
+
+              {/* Additional Place Cards Grid below Explore Nearby (Same Card Design as Left) */}
+              {loading ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5 animate-fade-in pt-2">
+                  {[1, 2, 3, 4].map((i) => (
+                    <SkeletonCard key={`skel-right-${i}`} />
+                  ))}
+                </div>
+              ) : rightListings.length > 0 ? (
+                <div className="space-y-4 pt-2">
+                  <div className="flex items-center justify-between border-b border-sunset-border pb-2.5">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-sunset-accent" />
+                      <h4 className="font-serif font-bold text-sm sm:text-base text-sunset-text">
+                        More Experiences to Explore
+                      </h4>
+                    </div>
+                    <span className="text-xs text-sunset-muted font-medium">
+                      {rightListings.length} {rightListings.length === 1 ? 'place' : 'places'}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5 animate-fade-in">
+                    {rightListings.map((listing) => (
+                      <ListingCard key={`right-${listing.id}`} listing={listing} />
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </div>
           </div>
+
+          {/* Centered Pagination Controls spanning full width */}
+          {paginatedListings.length > 0 && renderPagination()}
         </div>
       ) : (
         <div className="space-y-8 animate-fade-in">
