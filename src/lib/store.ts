@@ -304,6 +304,17 @@ export function saveRegisteredAccount(profile: Profile): void {
       });
     }
     localStorage.setItem(STORAGE_KEY_REGISTERED_ACCOUNTS, JSON.stringify(accounts));
+
+    // When an administrator account is saved, remove it from local provider lists to avoid misassignment
+    if (finalRole === 'admin') {
+      const currentProviders = getLocalProviders();
+      const filtered = currentProviders.filter(
+        p => p.id !== profile.id && (!profile.email || p.email?.toLowerCase() !== profile.email.toLowerCase())
+      );
+      if (filtered.length !== currentProviders.length) {
+        saveLocalProviders(filtered);
+      }
+    }
   } catch (e) {
     console.error('Failed to save registered account', e);
   }
@@ -315,7 +326,7 @@ export function findRegisteredAccount(identifier: string): Profile | null {
   const lower = identifier.toLowerCase();
   const found = accounts.find(a => a.id === identifier || a.email?.toLowerCase() === lower);
   if (found) {
-    if (lower.includes('admin') || found.email?.toLowerCase().includes('admin')) {
+    if (found.role === 'admin' || lower.includes('admin') || found.email?.toLowerCase().includes('admin')) {
       return { ...found, role: 'admin', provider_status: 'approved' };
     }
     return found;
@@ -324,7 +335,7 @@ export function findRegisteredAccount(identifier: string): Profile | null {
   const providers = getLocalProviders();
   const foundProv = providers.find(p => p.id === identifier || p.email?.toLowerCase() === lower);
   if (foundProv) {
-    if (lower.includes('admin') || foundProv.email?.toLowerCase().includes('admin')) {
+    if (foundProv.role === 'admin' || lower.includes('admin') || foundProv.email?.toLowerCase().includes('admin')) {
       return { ...foundProv, role: 'admin', provider_status: 'approved' };
     }
     return foundProv;

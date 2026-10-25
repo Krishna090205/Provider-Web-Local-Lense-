@@ -94,15 +94,19 @@ export const AuthPage: React.FC = () => {
     defaultValues: { email: '' },
   });
 
-  const selectedRole = registerForm.watch('role');
+  const [selectedRole, setSelectedRole] = useState<'provider' | 'admin'>(initialRole);
+
+  const handleRoleSelect = (role: 'provider' | 'admin') => {
+    setSelectedRole(role);
+    registerForm.setValue('role', role);
+  };
 
   const handleGoogleSignIn = async () => {
     if (isGoogleLoading) return;
     setStatusMessage(null);
     setIsGoogleLoading(true);
     try {
-      const targetRole = mode === 'signup' ? selectedRole : undefined;
-      const res = await signInWithGoogle(targetRole);
+      const res = await signInWithGoogle(selectedRole);
       if (!res.success) {
         setIsGoogleLoading(false);
         const errText = res.error || 'Google authentication failed.';
@@ -137,9 +141,12 @@ export const AuthPage: React.FC = () => {
   const onLoginSubmit = async (data: LoginFormValues) => {
     setStatusMessage(null);
     try {
-      const res = await signIn(data.email, data.password);
+      const res = await signIn(data.email, data.password, selectedRole);
       if (res.success) {
-        toast.success('Signed in successfully! Redirecting...');
+        const welcomeText = selectedRole === 'admin'
+          ? 'Signed in successfully! Admin privileges activated.'
+          : 'Signed in successfully! Redirecting...';
+        toast.success(welcomeText);
         
         const isGenericDestination = !fromState?.pathname || fromState.pathname === '/dashboard' || fromState.pathname === '/auth';
         if (!isGenericDestination) {
@@ -147,7 +154,7 @@ export const AuthPage: React.FC = () => {
         } else {
           // Check role to direct to correct dashboard
           const storedUser = localStorage.getItem('locallens_current_user_v1');
-          let userRole = 'provider';
+          let userRole = selectedRole;
           if (storedUser) {
             try {
               userRole = JSON.parse(storedUser)?.role || userRole;
@@ -155,7 +162,7 @@ export const AuthPage: React.FC = () => {
               // ignore
             }
           }
-          if (data.email.toLowerCase().includes('admin')) {
+          if (selectedRole === 'admin' || data.email.toLowerCase().includes('admin')) {
             userRole = 'admin';
           }
           const destination = userRole === 'admin' ? '/dashboard/admin' : '/dashboard/provider';
@@ -176,11 +183,11 @@ export const AuthPage: React.FC = () => {
   const onRegisterSubmit = async (data: RegisterFormValues) => {
     setStatusMessage(null);
     try {
-      const res = await signUp(data.email, data.password, data.name, data.role, data.businessName);
+      const res = await signUp(data.email, data.password, data.name, selectedRole, data.businessName);
       if (res.success) {
-        const welcomeText = data.role === 'provider'
-          ? 'Provider registration submitted! Your account is pending verification by our admin team.'
-          : 'Welcome Administrator! Admin privileges activated.';
+        const welcomeText = selectedRole === 'admin'
+          ? 'Welcome Administrator! Admin privileges activated.'
+          : 'Provider registration submitted! Your account is pending verification by our admin team.';
         setStatusMessage({
           type: 'success',
           text: welcomeText,
@@ -190,7 +197,7 @@ export const AuthPage: React.FC = () => {
         const isGenericDestination = !fromState?.pathname || fromState.pathname === '/dashboard' || fromState.pathname === '/auth';
         const destination = !isGenericDestination
           ? `${fromState.pathname}${fromState.search || ''}`
-          : (data.role === 'admin' ? '/dashboard/admin' : '/dashboard/provider');
+          : (selectedRole === 'admin' ? '/dashboard/admin' : '/dashboard/provider');
 
         setTimeout(() => {
           navigate(destination, { replace: true });
@@ -330,6 +337,61 @@ export const AuthPage: React.FC = () => {
           {/* LOGIN FORM */}
           {mode === 'login' && (
             <form onSubmit={loginForm.handleSubmit(onLoginSubmit)} className="space-y-4">
+              
+              {/* Role Selection on Login */}
+              <div className="space-y-2 mb-4">
+                <label className="text-xs font-bold text-sunset-accent uppercase tracking-wider block font-serif">
+                  Select Your Account Type / Portal
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => handleRoleSelect('provider')}
+                    className={`p-3.5 rounded-2xl border text-left flex flex-col justify-between transition-all ${
+                      selectedRole === 'provider'
+                        ? 'bg-sunset-accent/15 border-sunset-accent shadow-lg shadow-sunset-accent/10'
+                        : 'bg-sunset-bg/60 border-sunset-border hover:border-sunset-accent/40'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400">
+                        <Building2 className="w-4 h-4" />
+                      </div>
+                      {selectedRole === 'provider' && <div className="w-2.5 h-2.5 rounded-full bg-sunset-accent" />}
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-sunset-text">Local Provider</p>
+                      <p className="text-[11px] text-sunset-muted leading-tight mt-0.5">
+                        Sign in to manage your shop, experiences & bookings
+                      </p>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleRoleSelect('admin')}
+                    className={`p-3.5 rounded-2xl border text-left flex flex-col justify-between transition-all ${
+                      selectedRole === 'admin'
+                        ? 'bg-sunset-accent/15 border-sunset-accent shadow-lg shadow-sunset-accent/10'
+                        : 'bg-sunset-bg/60 border-sunset-border hover:border-sunset-accent/40'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="w-8 h-8 rounded-lg bg-sunset-accent/20 flex items-center justify-center text-sunset-accent">
+                        <ShieldCheck className="w-4 h-4" />
+                      </div>
+                      {selectedRole === 'admin' && <div className="w-2.5 h-2.5 rounded-full bg-sunset-accent" />}
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-sunset-text">Administrator</p>
+                      <p className="text-[11px] text-sunset-muted leading-tight mt-0.5">
+                        Sign in with admin authority to review & govern platform
+                      </p>
+                    </div>
+                  </button>
+                </div>
+              </div>
+
               <div>
                 <label className="text-xs font-semibold text-sunset-text mb-1.5 block">Email Address</label>
                 <div className="relative">
@@ -396,7 +458,7 @@ export const AuthPage: React.FC = () => {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <button
                     type="button"
-                    onClick={() => registerForm.setValue('role', 'provider')}
+                    onClick={() => handleRoleSelect('provider')}
                     className={`p-3.5 rounded-2xl border text-left flex flex-col justify-between transition-all ${
                       selectedRole === 'provider'
                         ? 'bg-sunset-accent/15 border-sunset-accent shadow-lg shadow-sunset-accent/10'
@@ -419,7 +481,7 @@ export const AuthPage: React.FC = () => {
 
                   <button
                     type="button"
-                    onClick={() => registerForm.setValue('role', 'admin')}
+                    onClick={() => handleRoleSelect('admin')}
                     className={`p-3.5 rounded-2xl border text-left flex flex-col justify-between transition-all ${
                       selectedRole === 'admin'
                         ? 'bg-sunset-accent/15 border-sunset-accent shadow-lg shadow-sunset-accent/10'

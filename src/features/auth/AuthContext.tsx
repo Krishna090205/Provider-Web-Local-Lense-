@@ -17,7 +17,7 @@ export interface AuthContextType {
   role: UserRole;
   loading: boolean;
   signUp: (email: string, pass: string, name: string, role: UserRole, businessName?: string) => Promise<{ success: boolean; error?: string }>;
-  signIn: (email: string, pass: string) => Promise<{ success: boolean; error?: string }>;
+  signIn: (email: string, pass: string, selectedRole?: UserRole) => Promise<{ success: boolean; error?: string }>;
   signInWithGoogle: (targetRole?: UserRole) => Promise<{ success: boolean; error?: string }>;
   signInWithGoogleDirect: (targetRole?: UserRole) => Promise<{ success: boolean; error?: string }>;
   signInWithOAuthToken: (tokenUrlOrHash: string) => Promise<{ success: boolean; error?: string }>;
@@ -73,10 +73,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           const dbRole = (profile?.role as UserRole) || (rawProfile?.role as UserRole);
           const emailRole: UserRole | undefined = session.user.email?.toLowerCase().includes('admin') ? 'admin' : undefined;
 
-          // Admin role priority: If DB, metadata, email, or existing registered account designated admin, they are admin!
+          // Admin role priority: If user chose admin, DB, metadata, email, or existing registered account designated admin, they are admin!
           // All other users are providers (tourist role is disabled).
           let permanentRole: UserRole = 'provider';
-          if (dbRole === 'admin' || metaRole === 'admin' || emailRole === 'admin' || existingAccount?.role === 'admin') {
+          const currentStored = getStoredUser();
+          if (
+            storedRole === 'admin' ||
+            dbRole === 'admin' ||
+            metaRole === 'admin' ||
+            emailRole === 'admin' ||
+            existingAccount?.role === 'admin' ||
+            currentStored?.role === 'admin'
+          ) {
             permanentRole = 'admin';
           } else {
             permanentRole = 'provider';
@@ -320,7 +328,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     return { success: false, error: 'Database service is required for registration.' };
   };
 
-  const signIn = async (email: string, pass: string): Promise<{ success: boolean; error?: string }> => {
+  const signIn = async (email: string, pass: string, selectedRole?: UserRole): Promise<{ success: boolean; error?: string }> => {
     if (isSupabaseConfigured) {
       try {
         const { data, error } = await supabase.auth.signInWithPassword({ email, password: pass });
@@ -334,9 +342,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           const existing = findRegisteredAccount(data.user.id) || (data.user.email ? findRegisteredAccount(data.user.email) : null);
           const emailRole: UserRole | undefined = email.toLowerCase().includes('admin') ? 'admin' : undefined;
 
-          // Admin priority check; all other users are providers
+          // Admin priority check: If user selected Administrator, or DB/metadata/email/existing account specifies admin, grant admin!
           let persistentRole: UserRole = 'provider';
-          if (dbRole === 'admin' || metaRole === 'admin' || emailRole === 'admin' || existing?.role === 'admin') {
+          if (
+            selectedRole === 'admin' ||
+            dbRole === 'admin' ||
+            metaRole === 'admin' ||
+            emailRole === 'admin' ||
+            existing?.role === 'admin'
+          ) {
             persistentRole = 'admin';
           } else {
             persistentRole = 'provider';
@@ -385,6 +399,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             });
           } catch (syncErr) {
             console.warn('Supabase profile sync on login notice:', syncErr);
+          }
+
+          // Also update user metadata in Supabase Auth if admin selected
+          try {
+            await supabase.auth.updateUser({
+              data: {
+                role: persistentRole,
+                provider_status: persistentRole === 'admin' ? 'approved' : p.provider_status
+              }
+            });
+          } catch (metaErr) {
+            console.warn('Supabase auth metadata update notice:', metaErr);
           }
 
           return { success: true };
