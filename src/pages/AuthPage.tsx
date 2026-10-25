@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams, useLocation, Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
+import { zodResolver } from '../lib/zodResolver';
 import {
   Compass, Mail, Lock, User, Briefcase, ArrowRight,
   CheckCircle2, AlertCircle, Building2, ShieldCheck

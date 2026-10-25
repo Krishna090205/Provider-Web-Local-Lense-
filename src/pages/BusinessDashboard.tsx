@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useForm, FieldErrors } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
+import { zodResolver } from '../lib/zodResolver';
 import {
   Building, Plus, Edit3, Trash2, Eye, Star, MessageSquare, Check,
   X, MapPin, Clock, Phone, Globe, Image as ImageIcon, ShieldCheck,

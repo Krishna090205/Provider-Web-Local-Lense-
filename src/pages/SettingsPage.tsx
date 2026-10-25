@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
+import { zodResolver } from '../lib/zodResolver';
 import { Sun, Moon, Monitor, Shield, User, Mail, Briefcase, Check, Sparkles, KeyRound, Trash2, AlertTriangle } from 'lucide-react';
 import { useAuth, profileUpdateSchema, ProfileUpdateFormValues } from '../features/auth';
 import { useTheme, ThemePreference } from '../features/theme';

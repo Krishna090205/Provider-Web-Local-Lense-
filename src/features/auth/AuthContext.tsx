@@ -163,15 +163,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           setUser(fullProfile);
           saveStoredUser(fullProfile);
 
-          // Guarantee sync to Supabase public.profiles table so it permanently exists in DB
-          if (isSupabaseConfigured) {
+          // If profile row is missing in Supabase DB, initialize it once safely
+          if (isSupabaseConfigured && !profile) {
             try {
-              await supabase.from('profiles').upsert({
+              await supabase.from('profiles').insert({
                 id: session.user.id,
                 full_name: fullProfile.name,
                 email: session.user.email,
-                role: permanentRole,
-                provider_status: permanentRole === 'admin' ? 'approved' : fullProfile.provider_status,
+                role: 'provider',
+                provider_status: 'pending',
                 business_name: fullProfile.business_name || null,
                 avatar_url: fullProfile.avatar || null,
                 updated_at: new Date().toISOString()
@@ -413,20 +413,22 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           setUser(p);
           saveStoredUser(p);
 
-          // Guarantee upsert into Supabase public.profiles table
-          try {
-            await supabase.from('profiles').upsert({
-              id: data.user.id,
-              full_name: p.name,
-              email: p.email || data.user.email,
-              role: persistentRole,
-              provider_status: persistentRole === 'admin' ? 'approved' : p.provider_status,
-              business_name: p.business_name || null,
-              avatar_url: p.avatar || null,
-              updated_at: new Date().toISOString()
-            });
-          } catch (syncErr) {
-            console.warn('Supabase profile sync on login notice:', syncErr);
+          // If profile row is missing in Supabase DB, initialize it once safely
+          if (!profile) {
+            try {
+              await supabase.from('profiles').insert({
+                id: data.user.id,
+                full_name: p.name,
+                email: p.email || data.user.email,
+                role: 'provider',
+                provider_status: 'pending',
+                business_name: p.business_name || null,
+                avatar_url: p.avatar || null,
+                updated_at: new Date().toISOString()
+              });
+            } catch (syncErr) {
+              console.warn('Supabase profile initial sync notice:', syncErr);
+            }
           }
 
           // Also update user metadata in Supabase Auth if admin selected
