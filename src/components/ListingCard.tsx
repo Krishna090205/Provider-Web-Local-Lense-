@@ -3,12 +3,14 @@ import { Link } from 'react-router-dom';
 import { Star, MapPin, Heart, ArrowUpRight } from 'lucide-react';
 import { Listing } from '../lib/types';
 import { useFavorites } from '../hooks/useFavorites';
+import { useLanguage } from '../features/i18n';
 
 interface ListingCardProps {
   listing: Listing;
 }
 
 export const ListingCard: React.FC<ListingCardProps> = ({ listing }) => {
+  const { t } = useLanguage();
   const { isFavorite, toggleFavorite } = useFavorites();
   const favorited = isFavorite(listing.id);
 
@@ -33,6 +35,8 @@ export const ListingCard: React.FC<ListingCardProps> = ({ listing }) => {
     forts: 'bg-amber-500/20 text-amber-500 border-amber-500/30',
   };
 
+  const categoryName = t(`categories.${listing.category}`) || listing.category;
+
   return (
     <div className="group glass-card rounded-2xl overflow-hidden flex flex-col h-full relative border border-sunset-border">
       {/* Image Container */}
@@ -48,14 +52,14 @@ export const ListingCard: React.FC<ListingCardProps> = ({ listing }) => {
         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30 pointer-events-none" />
 
         {/* Top Badges */}
-        <div className="absolute top-3 left-3 right-3 flex items-center justify-between pointer-events-auto">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <span className={`px-2.5 py-1 rounded-full text-xs font-semibold capitalize border backdrop-blur-md ${categoryColors[listing.category] || 'bg-black/60 text-white'}`}>
-              {listing.category}
+        <div className="absolute top-3 left-3 right-3 flex items-start justify-between pointer-events-auto gap-2">
+          <div className="flex items-center gap-1.5 flex-wrap flex-1 min-w-0 pr-1">
+            <span className={`px-2.5 py-1 rounded-full text-[11px] sm:text-xs font-semibold capitalize border backdrop-blur-md truncate max-w-full ${categoryColors[listing.category] || 'bg-black/60 text-white'}`}>
+              {categoryName}
             </span>
             {isSample && (
-              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-sunset-accent text-sunset-on-accent uppercase tracking-wider">
-                Sample
+              <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-sunset-accent text-sunset-on-accent uppercase tracking-wider flex-shrink-0">
+                {t('listingCard.sampleBadge')}
               </span>
             )}
           </div>
@@ -64,7 +68,7 @@ export const ListingCard: React.FC<ListingCardProps> = ({ listing }) => {
           <button
             onClick={handleFavoriteClick}
             aria-label={favorited ? 'Remove from favorites' : 'Save to favorites'}
-            className="p-2 rounded-full bg-black/60 hover:bg-black/80 text-white backdrop-blur-md border border-white/10 transition-transform active:scale-90"
+            className="p-2 rounded-full bg-black/60 hover:bg-black/80 text-white backdrop-blur-md border border-white/10 transition-transform active:scale-90 flex-shrink-0"
           >
             <Heart
               className={`w-4 h-4 transition-colors ${
@@ -81,10 +85,10 @@ export const ListingCard: React.FC<ListingCardProps> = ({ listing }) => {
       </div>
 
       {/* Content */}
-      <div className="p-5 flex flex-col flex-1">
+      <div className="p-4 sm:p-5 flex flex-col flex-1">
         {/* Area & Rating */}
-        <div className="flex items-center justify-between text-xs text-sunset-muted mb-2">
-          <div className="flex items-center gap-1 line-clamp-1">
+        <div className="flex items-center justify-between gap-2 text-xs text-sunset-muted mb-2">
+          <div className="flex items-center gap-1 min-w-0 flex-1">
             <MapPin className="w-3.5 h-3.5 text-sunset-accent flex-shrink-0" />
             <span className="truncate">{listing.area}</span>
           </div>
@@ -97,8 +101,8 @@ export const ListingCard: React.FC<ListingCardProps> = ({ listing }) => {
         </div>
 
         {/* Title */}
-        <Link to={`/listings/${listing.id}`} className="group-hover:text-sunset-accent transition-colors">
-          <h3 className="text-lg font-bold text-sunset-text line-clamp-1 mb-2 font-serif">
+        <Link to={`/listings/${listing.id}`} className="group-hover:text-sunset-accent transition-colors block">
+          <h3 className="text-base sm:text-lg font-bold text-sunset-text line-clamp-1 mb-2 font-serif break-words">
             {displayName}
           </h3>
         </Link>
@@ -109,16 +113,16 @@ export const ListingCard: React.FC<ListingCardProps> = ({ listing }) => {
         </p>
 
         {/* Footer Details & Explore link */}
-        <div className="pt-3 border-t border-sunset-border flex items-center justify-between mt-auto">
-          <span className="text-[11px] text-sunset-muted">
+        <div className="pt-3 border-t border-sunset-border flex items-center justify-between gap-2 mt-auto">
+          <span className="text-[11px] text-sunset-muted truncate">
             {listing.hours?.["Monday"] ? `Mon: ${listing.hours["Monday"]}` : 'Verified Schedule'}
           </span>
 
           <Link
             to={`/listings/${listing.id}`}
-            className="inline-flex items-center gap-1 text-xs font-semibold text-sunset-accent hover:underline group/link"
+            className="inline-flex items-center gap-1 text-xs font-semibold text-sunset-accent hover:underline group/link flex-shrink-0"
           >
-            <span>View Details</span>
+            <span>{t('listingCard.viewDetails')}</span>
             <ArrowUpRight className="w-3.5 h-3.5 transition-transform group-hover/link:translate-x-0.5 group-hover/link:-translate-y-0.5" />
           </Link>
         </div>

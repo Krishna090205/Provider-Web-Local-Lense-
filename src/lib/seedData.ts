@@ -415,6 +415,191 @@ export const INITIAL_LISTINGS: Listing[] = [
         display_order: 1
       }
     ]
+  },
+  {
+    id: 'a1b2c3d4-0012-4000-8000-000000000012',
+    category: 'attractions',
+    name: '[Sample] Dr. Bhau Daji Lad Museum',
+    description: 'Mumbai\'s oldest public museum established in 1872 as the Victoria & Albert Museum of Bombay. Showcases city cultural heritage, 19th-century fine arts, dioramas, and silver filigree in a breathtaking High Victorian Renaissance interior.',
+    address: '91 A, Rani Baug, Veer Mata Jijabai Bhonsle Udyan, Dr Baba Saheb Ambedkar Rd, Byculla East, Mumbai 400027',
+    area: 'Byculla',
+    lat: 18.9786,
+    lng: 72.8354,
+    hours: {
+      "Monday": "10:00 AM - 5:30 PM",
+      "Tuesday": "10:00 AM - 5:30 PM",
+      "Wednesday": "Closed",
+      "Thursday": "10:00 AM - 5:30 PM",
+      "Friday": "10:00 AM - 5:30 PM",
+      "Saturday": "10:00 AM - 5:30 PM",
+      "Sunday": "10:00 AM - 5:30 PM"
+    },
+    phone: '+91 22 2373 1234',
+    website: 'https://www.bdlmuseum.org',
+    price_level: '₹10 Entry',
+    status: 'approved',
+    featured: true,
+    rating: 4.8,
+    review_count: 1650,
+    created_at: '2026-02-12T10:00:00Z',
+    photos: [
+      {
+        id: 'p13',
+        listing_id: 'a1b2c3d4-0012-4000-8000-000000000012',
+        url: 'https://images.unsplash.com/photo-1565008447742-97f6f38c985c?auto=format&fit=crop&w=1200&q=80',
+        caption: 'Victorian gilded arches and Palladian hall of Dr. Bhau Daji Lad Museum',
+        is_cover: true,
+        display_order: 1
+      }
+    ]
+  },
+  {
+    id: 'a1b2c3d4-0013-4000-8000-000000000013',
+    category: 'attractions',
+    name: '[Sample] National Gallery of Modern Art (NGMA Mumbai)',
+    description: 'Premier national repository of modern art housed in the 1911 Sir Cowasji Jehangir Public Hall near Regal Circle. Features rotating exhibitions of Raja Ravi Varma, Amrita Sher-Gil, M.F. Husain, and contemporary sculptures.',
+    address: 'Sir Cowasji Jehangir Public Hall, Mahatma Gandhi Road, Mantralaya, Fort, Mumbai 400032',
+    area: 'Fort / Kala Ghoda',
+    lat: 18.9272,
+    lng: 72.8315,
+    hours: {
+      "Monday": "Closed",
+      "Tuesday": "11:00 AM - 6:00 PM",
+      "Wednesday": "11:00 AM - 6:00 PM",
+      "Thursday": "11:00 AM - 6:00 PM",
+      "Friday": "11:00 AM - 6:00 PM",
+      "Saturday": "11:00 AM - 6:00 PM",
+      "Sunday": "11:00 AM - 6:00 PM"
+    },
+    phone: '+91 22 2288 1969',
+    website: 'https://ngmaindia.gov.in',
+    price_level: '₹20 Entry',
+    status: 'approved',
+    featured: false,
+    rating: 4.7,
+    review_count: 1120,
+    created_at: '2026-02-15T11:00:00Z',
+    photos: [
+      {
+        id: 'p14',
+        listing_id: 'a1b2c3d4-0013-4000-8000-000000000013',
+        url: 'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?auto=format&fit=crop&w=1200&q=80',
+        caption: 'Exhibition hall showing modern paintings and sculpture curation',
+        is_cover: true,
+        display_order: 1
+      }
+    ]
+  },
+  {
+    id: 'a1b2c3d4-0014-4000-8000-000000000014',
+    category: 'attractions',
+    name: '[Sample] Elephanta Caves (UNESCO World Heritage Site)',
+    description: 'Spectacular 5th to 8th-century rock-cut cave temples on Gharapuri Island in Mumbai Harbour. Famous worldwide for the monumental 6-meter Trimurti Sadashiva sculpture, rock-cut courtyards, and ancient stone carvings.',
+    address: 'Gharapuri Island, Raigad District (Ferry from Gateway of India Jetty), Maharashtra 400094',
+    area: 'Mumbai Harbour / Island',
+    lat: 18.9633,
+    lng: 72.9315,
+    hours: {
+      "Monday": "Closed",
+      "Tuesday": "9:00 AM - 5:30 PM",
+      "Wednesday": "9:00 AM - 5:30 PM",
+      "Thursday": "9:00 AM - 5:30 PM",
+      "Friday": "9:00 AM - 5:30 PM",
+      "Saturday": "9:00 AM - 5:30 PM",
+      "Sunday": "9:00 AM - 5:30 PM"
+    },
+    phone: null,
+    website: 'https://whc.unesco.org/en/list/244',
+    price_level: '₹40 Entry',
+    status: 'approved',
+    featured: true,
+    rating: 4.8,
+    review_count: 3890,
+    created_at: '2026-02-18T10:00:00Z',
+    photos: [
+      {
+        id: 'p15',
+        listing_id: 'a1b2c3d4-0014-4000-8000-000000000014',
+        url: 'https://images.unsplash.com/photo-1596176530529-78163a4f7af2?auto=format&fit=crop&w=1200&q=80',
+        caption: 'Colossal Trimurti monolithic rock relief carved into island basalt',
+        is_cover: true,
+        display_order: 1
+      }
+    ]
+  },
+  {
+    id: 'a1b2c3d4-0015-4000-8000-000000000015',
+    category: 'restaurants',
+    name: '[Sample] Leopold Cafe & Bar',
+    description: 'Legendary multi-cuisine cafe and watering hole established in 1871 on Colaba Causeway. Immortalized in Gregory David Roberts\' bestselling epic Shantaram, famed for draft beers, hearty appetizers, and historic atmosphere.',
+    address: 'Opposite Colaba Police Station, Shahid Bhagat Singh Rd, Colaba Causeway, Mumbai 400001',
+    area: 'Colaba',
+    lat: 18.9229,
+    lng: 72.8319,
+    hours: {
+      "Monday": "7:30 AM - 12:00 AM",
+      "Tuesday": "7:30 AM - 12:00 AM",
+      "Wednesday": "7:30 AM - 12:00 AM",
+      "Thursday": "7:30 AM - 12:00 AM",
+      "Friday": "7:30 AM - 12:00 AM",
+      "Saturday": "7:30 AM - 12:00 AM",
+      "Sunday": "7:30 AM - 12:00 AM"
+    },
+    phone: '+91 22 2282 4801',
+    website: 'https://leopoldcafe.com',
+    price_level: '₹₹',
+    status: 'approved',
+    featured: true,
+    rating: 4.6,
+    review_count: 2840,
+    created_at: '2026-02-20T12:00:00Z',
+    photos: [
+      {
+        id: 'p16',
+        listing_id: 'a1b2c3d4-0015-4000-8000-000000000015',
+        url: 'https://images.unsplash.com/photo-1554118811-1e0d58224f24?auto=format&fit=crop&w=1200&q=80',
+        caption: 'Bustling vintage dining room and cafe tables on Colaba Causeway',
+        is_cover: true,
+        display_order: 1
+      }
+    ]
+  },
+  {
+    id: 'a1b2c3d4-0016-4000-8000-000000000016',
+    category: 'shops',
+    name: '[Sample] Colaba Causeway Heritage Flea Market',
+    description: 'Celebrated cultural open-air shopping promenade stretching across South Mumbai. Renowned for vintage brassware, antique clocks, semi-precious jewelry, embroidered shawls, books, and handcrafted artifacts.',
+    address: 'Shahid Bhagat Singh Road, Colaba, Mumbai, Maharashtra 400001',
+    area: 'Colaba',
+    lat: 18.9214,
+    lng: 72.8312,
+    hours: {
+      "Monday": "11:00 AM - 9:30 PM",
+      "Tuesday": "11:00 AM - 9:30 PM",
+      "Wednesday": "11:00 AM - 9:30 PM",
+      "Thursday": "11:00 AM - 9:30 PM",
+      "Friday": "11:00 AM - 9:30 PM",
+      "Saturday": "11:00 AM - 9:30 PM",
+      "Sunday": "11:00 AM - 9:30 PM"
+    },
+    phone: null,
+    website: null,
+    price_level: '₹',
+    status: 'approved',
+    featured: false,
+    rating: 4.5,
+    review_count: 1490,
+    created_at: '2026-02-22T10:00:00Z',
+    photos: [
+      {
+        id: 'p17',
+        listing_id: 'a1b2c3d4-0016-4000-8000-000000000016',
+        url: 'https://images.unsplash.com/photo-1555396273-367ea4eb4db5?auto=format&fit=crop&w=1200&q=80',
+        caption: 'Vibrant street stalls with antique lamps, brass curios, and jewelry',
+        is_cover: true,
+        display_order: 1
+      }
+    ]
   }
 ];
 

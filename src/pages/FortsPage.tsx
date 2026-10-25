@@ -2,8 +2,10 @@ import React, { useState } from 'react';
 import { Shield, MapPin, Mountain, Clock, Calendar, Navigation, Compass, ExternalLink } from 'lucide-react';
 import { HISTORICAL_FORTS_DATA } from '../lib/seedData';
 import { MapComponent } from '../components/MapComponent';
+import { useLanguage } from '../features/i18n';
 
 export const FortsPage: React.FC = () => {
+  const { t } = useLanguage();
   const [selectedFortId, setSelectedFortId] = useState<string>(HISTORICAL_FORTS_DATA[0].id);
 
   const selectedFort = HISTORICAL_FORTS_DATA.find(f => f.id === selectedFortId) || HISTORICAL_FORTS_DATA[0];
@@ -23,13 +25,13 @@ export const FortsPage: React.FC = () => {
       <div className="text-center space-y-3 max-w-3xl mx-auto">
         <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full glass-panel border border-sunset-border text-sunset-accent text-xs font-semibold uppercase tracking-widest shadow-md font-serif">
           <Shield className="w-3.5 h-3.5 text-sunset-accent" />
-          <span>Maharashtra Fort Heritage</span>
+          <span>{t('fortsPage.badge')}</span>
         </div>
         <h1 className="text-3xl sm:text-5xl font-extrabold font-serif text-sunset-text">
-          Historic Maratha & Coastal Forts
+          {t('fortsPage.title')}
         </h1>
         <p className="text-sm sm:text-base text-sunset-muted font-normal leading-relaxed">
-          From the crowning peak of Chhatrapati Shivaji Maharaj's capital at Raigad to the ancient maritime bastion of Vasai. Real archival histories, verified GPS locations, elevation data, and trek guidelines.
+          {t('fortsPage.subtitle')}
         </p>
       </div>
 
@@ -66,16 +68,16 @@ export const FortsPage: React.FC = () => {
             />
             <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20" />
             
-            <div className="absolute bottom-4 left-4 right-4 flex items-end justify-between">
-              <div>
+            <div className="absolute bottom-3 sm:bottom-4 left-3 sm:left-4 right-3 sm:right-4 flex flex-col sm:flex-row sm:items-end justify-between gap-2">
+              <div className="min-w-0">
                 <span className="text-xs text-sunset-accent font-bold uppercase tracking-wider block">
                   {selectedFort.marathiName}
                 </span>
-                <h2 className="text-2xl sm:text-3xl font-extrabold text-white font-serif">
+                <h2 className="text-xl sm:text-3xl font-extrabold text-white font-serif break-words">
                   {selectedFort.name}
                 </h2>
               </div>
-              <span className="px-3 py-1 rounded-lg text-xs font-bold bg-sunset-accent text-sunset-on-accent">
+              <span className="self-start sm:self-auto px-3 py-1 rounded-lg text-xs font-bold bg-sunset-accent text-sunset-on-accent flex-shrink-0">
                 {selectedFort.elevation}
               </span>
             </div>
@@ -90,14 +92,14 @@ export const FortsPage: React.FC = () => {
             <div className="grid grid-cols-2 gap-3 text-xs">
               <div className="p-3.5 rounded-xl bg-sunset-bg/60 border border-sunset-border space-y-1">
                 <span className="text-sunset-muted flex items-center gap-1.5 font-semibold">
-                  <Mountain className="w-3.5 h-3.5 text-sunset-accent" /> Elevation
+                  <Mountain className="w-3.5 h-3.5 text-sunset-accent" /> {t('fortsPage.elevation')}
                 </span>
                 <p className="font-bold text-sunset-text text-sm">{selectedFort.elevation}</p>
               </div>
 
               <div className="p-3.5 rounded-xl bg-sunset-bg/60 border border-sunset-border space-y-1">
                 <span className="text-sunset-muted flex items-center gap-1.5 font-semibold">
-                  <Calendar className="w-3.5 h-3.5 text-sunset-accent" /> Key Milestone
+                  <Calendar className="w-3.5 h-3.5 text-sunset-accent" /> {t('fortsPage.keyMilestone')}
                 </span>
                 <p className="font-bold text-sunset-text text-sm">{selectedFort.coronationYear}</p>
               </div>
@@ -133,7 +135,7 @@ export const FortsPage: React.FC = () => {
 
         {/* Historical Narrative */}
         <div className="pt-6 border-t border-sunset-border space-y-3">
-          <h4 className="text-lg font-bold text-sunset-text font-serif">Verified Historical Record</h4>
+          <h4 className="text-lg font-bold text-sunset-text font-serif">{t('fortsPage.architectureTitle')}</h4>
           <p className="text-sm sm:text-base text-sunset-muted leading-relaxed">
             {selectedFort.history}
           </p>
@@ -143,7 +145,7 @@ export const FortsPage: React.FC = () => {
         <div className="p-4 rounded-2xl bg-sunset-accent/10 border border-sunset-accent/20 text-xs sm:text-sm text-sunset-text flex items-start gap-3">
           <Mountain className="w-5 h-5 text-sunset-accent flex-shrink-0 mt-0.5" />
           <div>
-            <strong className="text-sunset-accent block mb-0.5 font-serif">Trek and Terrain Logistics:</strong>
+            <strong className="text-sunset-accent block mb-0.5 font-serif">{t('fortsPage.trekGuide')}:</strong>
             <span className="text-sunset-muted">{selectedFort.trekInfo}</span>
           </div>
         </div>
@@ -156,7 +158,7 @@ export const FortsPage: React.FC = () => {
           <div>
             <h3 className="text-xl font-bold text-sunset-text font-serif flex items-center gap-2">
               <MapPin className="w-5 h-5 text-sunset-accent" />
-              <span>Geographic Citadel Map</span>
+              <span>{t('fortsPage.mapTitle')}</span>
             </h3>
             <p className="text-xs text-sunset-muted">
               Interactive OpenStreetMap overview showing Mumbai and Sahyadri defense lines
@@ -176,7 +178,7 @@ export const FortsPage: React.FC = () => {
       </div>
 
       {/* All 4 Forts Summary Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
         {HISTORICAL_FORTS_DATA.map((f) => (
           <div
             key={f.id}

@@ -30,6 +30,7 @@ export interface ListingPhoto {
 export interface Listing {
   id: string;
   owner_id?: string;
+  owner_email?: string;
   category: ListingCategory;
   name: string;
   description: string;
@@ -47,6 +48,7 @@ export interface Listing {
   rating: number;
   review_count: number;
   created_at: string;
+  image_note?: string | null;
   photos?: ListingPhoto[];
 }
 

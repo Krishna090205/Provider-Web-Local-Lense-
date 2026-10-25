@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { Compass, Mail, Phone, MapPin, Send, CheckCircle2, ShieldCheck, Heart, Train, CloudSun } from 'lucide-react';
+import { useLanguage } from '../features/i18n';
 
 export const AboutContactPage: React.FC = () => {
+  const { t } = useLanguage();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [subject, setSubject] = useState('Suggestion');
@@ -27,18 +29,18 @@ export const AboutContactPage: React.FC = () => {
       <div className="text-center space-y-4 max-w-3xl mx-auto">
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full glass-panel border border-sunset-border text-sunset-accent text-xs font-semibold uppercase tracking-widest shadow-md font-serif">
           <Compass className="w-3.5 h-3.5 text-sunset-accent" />
-          <span>Our Vision & Heritage</span>
+          <span>{t('aboutPage.badge')}</span>
         </div>
         <h1 className="text-3xl sm:text-5xl font-extrabold font-serif text-sunset-text">
-          The Story of LocalLens Mumbai
+          {t('aboutPage.title')}
         </h1>
         <p className="text-sm sm:text-base text-sunset-muted font-normal leading-relaxed">
-          Mumbai is not merely a financial powerhouse; it is an electric archipelago of seven islands steeped in Portuguese maritime bastions, Victorian Gothic UNESCO architecture, centuries-old Irani bakeries, and impregnable Maratha mountain strongholds.
+          {t('aboutPage.subtitle')}
         </p>
       </div>
 
       {/* Core Principles */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 sm:gap-6">
         <div className="glass-card p-6 rounded-3xl border border-sunset-border space-y-3">
           <div className="w-12 h-12 rounded-xl bg-sunset-accent/15 text-sunset-accent flex items-center justify-center">
             <ShieldCheck className="w-6 h-6" />

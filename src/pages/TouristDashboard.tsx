@@ -9,10 +9,12 @@ import { useFavorites } from '../hooks/useFavorites';
 import { Listing, Review } from '../types';
 import { useListings } from '../hooks/useListingsQuery';
 import { useUserReviews, useDeleteReviewMutation } from '../hooks/useReviewsQuery';
+import { useToast } from '../components/Toast';
 
 export const TouristDashboard: React.FC = () => {
   const { user, updateProfile } = useAuth();
   const { favoriteIds, toggleFavorite } = useFavorites();
+  const toast = useToast();
 
   const [activeTab, setActiveTab] = useState<'saved' | 'reviews'>('saved');
   const [editingProfile, setEditingProfile] = useState<boolean>(false);
@@ -29,17 +31,23 @@ export const TouristDashboard: React.FC = () => {
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!nameInput.trim()) return;
-    await updateProfile(nameInput.trim());
-    setEditingProfile(false);
+    try {
+      await updateProfile(nameInput.trim());
+      setEditingProfile(false);
+      toast.success('Profile updated successfully!');
+    } catch {
+      toast.error('Failed to update profile');
+    }
   };
 
   const handleDeleteReview = async (reviewId: string) => {
     if (!window.confirm('Are you sure you want to delete this review?')) return;
     try {
       await deleteReviewMutation.mutateAsync(reviewId);
+      toast.success('Review deleted');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to delete review';
-      alert(msg);
+      toast.error(msg);
     }
   };
 
@@ -48,29 +56,29 @@ export const TouristDashboard: React.FC = () => {
       
       {/* Profile Overview Card */}
       <div className="glass-panel p-6 sm:p-8 rounded-3xl flex flex-col md:flex-row items-center justify-between gap-6">
-        <div className="flex items-center gap-5">
+        <div className="flex flex-col sm:flex-row items-center sm:items-start text-center sm:text-left gap-4 sm:gap-5">
           <img
             src={user?.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80'}
             alt={user?.name || 'Tourist Profile'}
-            className="w-20 h-20 rounded-2xl object-cover ring-4 ring-sunset-accent/30"
+            className="w-20 h-20 rounded-2xl object-cover ring-4 ring-sunset-accent/30 flex-shrink-0"
           />
           <div className="space-y-1">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
               <h1 className="text-2xl font-bold font-serif text-sunset-text">{user?.name || 'Local Explorer'}</h1>
               <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-sunset-accent/20 text-sunset-accent border border-sunset-accent/30 uppercase">
                 {user?.role || 'Tourist'}
               </span>
             </div>
-            <p className="text-xs text-sunset-muted">{user?.email || 'arun.tourist@locallens.in'}</p>
-            <p className="text-xs text-sunset-muted flex items-center gap-1.5 pt-1">
-              <MapPin className="w-3.5 h-3.5 text-sunset-accent" />
+            {user?.email && <p className="text-xs text-sunset-muted">{user.email}</p>}
+            <p className="text-xs text-sunset-muted flex items-center justify-center sm:justify-start gap-1.5 pt-1">
+              <MapPin className="w-3.5 h-3.5 text-sunset-accent flex-shrink-0" />
               <span>Exploring Mumbai Heritage & Sahyadri Trails</span>
             </p>
           </div>
         </div>
 
         {/* Action Controls & Settings Link */}
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center justify-center sm:justify-start gap-3">
           {editingProfile ? (
             <form onSubmit={handleSaveProfile} className="flex gap-2">
               <input
@@ -159,7 +167,7 @@ export const TouristDashboard: React.FC = () => {
           {loading ? (
             <div className="text-center py-12 text-sunset-muted text-sm">Loading your saved destinations...</div>
           ) : savedListings.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
               {savedListings.map((item) => {
                 const cover = item.photos?.[0]?.url || 'https://images.unsplash.com/photo-1570168007204-dfb528c6958f?auto=format&fit=crop&w=600&q=80';
                 return (

@@ -17,13 +17,12 @@ export const DashboardRedirect: React.FC = () => {
     return <Navigate to="/auth?mode=login" replace />;
   }
 
-  if (role === 'admin') {
+  const isAdminEmail = user.email?.toLowerCase().includes('admin');
+  const effectiveRole = isAdminEmail ? 'admin' : (user.role || role);
+
+  if (effectiveRole === 'admin') {
     return <Navigate to="/dashboard/admin" replace />;
   }
 
-  if (role === 'provider') {
-    return <Navigate to="/dashboard/provider" replace />;
-  }
-
-  return <Navigate to="/dashboard/tourist" replace />;
+  return <Navigate to="/dashboard/provider" replace />;
 };

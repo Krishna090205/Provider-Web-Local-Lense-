@@ -1,11 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
   Building, Plus, Edit3, Trash2, Eye, Star, MessageSquare, Check,
   X, MapPin, Clock, Phone, Globe, Image as ImageIcon, ShieldCheck,
-  AlertCircle, AlertTriangle, ShieldX, Sparkles, Bell
+  AlertCircle, AlertTriangle, ShieldX, Sparkles, Bell, UploadCloud, Loader2, Lock,
+  RefreshCw
 } from 'lucide-react';
 import { useAuth } from '../features/auth';
 import { listingFormSchema, ListingFormValues } from '../features/dashboard';
@@ -16,13 +17,22 @@ import {
   useDeleteListingMutation
 } from '../hooks/useListingsQuery';
 import { Listing, ListingCategory, ProviderStatus } from '../types';
-import { getLocalNotifications, markNotificationAsRead } from '../lib/store';
+import {
+  getLocalNotifications,
+  markNotificationAsRead,
+  uploadListingPhoto,
+  getLocalProviders,
+  updateProviderApproval
+} from '../lib/store';
+import { useToast } from '../components/Toast';
 
 export const BusinessDashboard: React.FC = () => {
   const { user, role } = useAuth();
+  const toast = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // TanStack Query for owner listings & mutations
-  const { data: listings = [], isLoading: loading } = useOwnerListings(user?.id);
+  // TanStack Query for owner listings & mutations (strictly isolated to this provider)
+  const { data: listings = [], isLoading: loading, refetch: refetchListings } = useOwnerListings(user?.id, user?.email);
   const createMutation = useCreateListingMutation();
   const updateMutation = useUpdateListingMutation();
   const deleteMutation = useDeleteListingMutation();
@@ -34,12 +44,16 @@ export const BusinessDashboard: React.FC = () => {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [photoUploadError, setPhotoUploadError] = useState<string | null>(null);
 
   // Form handling via React Hook Form + Zod
   const {
     register,
     handleSubmit,
     reset,
+    setValue,
+    watch,
     formState: { errors, isSubmitting }
   } = useForm<ListingFormValues>({
     resolver: zodResolver(listingFormSchema),
@@ -59,25 +73,73 @@ export const BusinessDashboard: React.FC = () => {
     }
   });
 
-  // Current Provider Status
-  const providerStatus: ProviderStatus = (user?.provider_status as ProviderStatus) || 'pending';
+  const currentPhotoUrl = watch('photoUrl');
+
+  const { refreshUser } = useAuth();
+  const [checkingStatus, setCheckingStatus] = useState<boolean>(false);
+
+  // Compute live provider status checking both authenticated profile and local store
+  const computeStatus = (): ProviderStatus => {
+    const local = user ? getLocalProviders().find(p => p.id === user.id || (p.email && p.email === user.email)) : null;
+    if (user?.provider_status === 'approved' || local?.provider_status === 'approved') return 'approved';
+    if (user?.provider_status === 'rejected' || local?.provider_status === 'rejected') return 'rejected';
+    if (user?.provider_status === 'suspended' || local?.provider_status === 'suspended') return 'suspended';
+    return (user?.provider_status as ProviderStatus) || local?.provider_status || 'pending';
+  };
+
+  const [providerStatus, setProviderStatus] = useState<ProviderStatus>(computeStatus);
+
+  useEffect(() => {
+    const syncStatus = () => {
+      setProviderStatus(computeStatus());
+    };
+    syncStatus();
+    window.addEventListener('locallens_user_updated', syncStatus);
+    window.addEventListener('storage', syncStatus);
+    return () => {
+      window.removeEventListener('locallens_user_updated', syncStatus);
+      window.removeEventListener('storage', syncStatus);
+    };
+  }, [user]);
+
   const isApproved = providerStatus === 'approved' || role === 'admin';
 
-  // Route Guard: only provider or admin allowed
-  if (role !== 'provider' && role !== 'admin') {
+  const handleCheckApproval = async () => {
+    setCheckingStatus(true);
+    try {
+      if (refreshUser) {
+        await refreshUser();
+      }
+      const newStatus = computeStatus();
+      setProviderStatus(newStatus);
+      if (newStatus === 'approved') {
+        toast.success('Your provider account is approved! Listing creation is now unlocked.');
+      } else {
+        toast.info('Status is currently pending. If you approved in Supabase, ensure the "provider_status" column exists in your profiles table.');
+      }
+    } catch {
+      toast.error('Failed to refresh status from database.');
+    } finally {
+      setCheckingStatus(false);
+    }
+  };
+
+
+
+  if (!user) {
     return (
       <div className="min-h-screen pt-32 pb-20 px-4 max-w-2xl mx-auto text-center space-y-6 text-sunset-text">
         <div className="w-16 h-16 rounded-2xl bg-amber-500/20 border border-amber-500/30 text-amber-400 mx-auto flex items-center justify-center">
           <AlertCircle className="w-8 h-8" />
         </div>
-        <h1 className="text-3xl font-extrabold font-serif text-sunset-text">Provider Access Required</h1>
+        <h1 className="text-3xl font-extrabold font-serif text-sunset-text">Sign In Required</h1>
         <p className="text-sm text-sunset-muted">
-          You are currently signed in as a <span className="capitalize font-semibold text-sunset-accent">{role}</span>. The business portal is reserved for registered local providers.
+          Please sign in to access your provider establishment portal.
         </p>
         <div className="pt-4 flex justify-center gap-3">
-          <Link to="/" className="btn-accent px-6 py-2.5 text-xs">Return to Home</Link>
-          <Link to="/dashboard/tourist" className="px-6 py-2.5 glass-panel rounded-xl text-xs text-sunset-text border border-sunset-border">
-            Tourist Dashboard
+          <Link to="/auth?mode=login" className="btn-accent px-6 py-2.5 text-xs">Sign In</Link>
+          <Link to="/" className="px-6 py-2.5 glass-panel rounded-xl text-xs text-sunset-text border border-sunset-border">
+            Return to Home
           </Link>
         </div>
       </div>
@@ -86,9 +148,11 @@ export const BusinessDashboard: React.FC = () => {
 
   const openCreateModal = () => {
     if (!isApproved) {
-      alert('Your provider application is currently pending or rejected. You cannot publish new listings to the public until approved.');
+      toast.warning('Admin Approval Required: Your provider account is currently pending verification. You can list shops once an administrator approves your account.');
+      return;
     }
     setEditingId(null);
+    setPhotoUploadError(null);
     reset({
       name: '',
       category: 'hotels',
@@ -98,8 +162,8 @@ export const BusinessDashboard: React.FC = () => {
       lat: '18.9217',
       lng: '72.8332',
       phone: '+91 22 ',
-      website: 'https://',
-      price_level: '₹₹',
+      website: '',
+      price_level: '',
       photoUrl: 'https://images.unsplash.com/photo-1570168007204-dfb528c6958f?auto=format&fit=crop&w=1000&q=80',
       hoursText: '10:00 AM - 10:00 PM'
     });
@@ -108,6 +172,7 @@ export const BusinessDashboard: React.FC = () => {
 
   const openEditModal = (listing: Listing) => {
     setEditingId(listing.id);
+    setPhotoUploadError(null);
     reset({
       name: listing.name.replace('[Sample]', '').trim(),
       category: listing.category,
@@ -123,6 +188,36 @@ export const BusinessDashboard: React.FC = () => {
       hoursText: (listing.hours as Record<string, string>)?.[ 'Monday' ] || '10:00 AM - 10:00 PM'
     });
     setModalOpen(true);
+  };
+
+  const handlePhotoFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadingPhoto(true);
+    setPhotoUploadError(null);
+    try {
+      const res = await uploadListingPhoto(file, user?.id);
+      if (res.error) {
+        setPhotoUploadError(res.error);
+        toast.error(res.error);
+      } else if (res.url) {
+        setValue('photoUrl', res.url, { shouldValidate: true });
+        toast.success('Cover photo uploaded successfully!');
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Photo upload failed';
+      setPhotoUploadError(msg);
+      toast.error(msg);
+    } finally {
+      setUploadingPhoto(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleRemovePhoto = () => {
+    setValue('photoUrl', '', { shouldValidate: true });
+    toast.info('Photo removed');
   };
 
   const onSaveListing = async (data: ListingFormValues) => {
@@ -145,7 +240,15 @@ export const BusinessDashboard: React.FC = () => {
       display_order: 1
     };
 
-    const initialStatus = isApproved ? 'approved' : 'pending';
+    const initialStatus = 'approved';
+
+    const cleanWeb = data.website?.trim();
+    const finalWebsite = (!cleanWeb || cleanWeb === 'https://' || cleanWeb === 'http://') ? null : cleanWeb;
+
+    const rawPrice = data.price_level?.trim() || '';
+    const formattedPrice = rawPrice.startsWith('₹')
+      ? rawPrice
+      : (!isNaN(Number(rawPrice)) ? `₹${rawPrice}` : (rawPrice.toLowerCase().startsWith('rs') ? rawPrice : (rawPrice ? `₹${rawPrice}` : '—')));
 
     try {
       if (editingId) {
@@ -160,17 +263,18 @@ export const BusinessDashboard: React.FC = () => {
             lat: parseFloat(data.lat) || 18.9217,
             lng: parseFloat(data.lng) || 72.8332,
             phone: data.phone?.trim() || null,
-            website: data.website?.trim() || null,
-            price_level: data.price_level,
+            website: finalWebsite,
+            price_level: formattedPrice,
             hours: hoursObj,
             photos: [photoObj],
-            status: isApproved ? 'approved' : 'pending'
+            status: 'approved'
           }
         });
-        setFeedback('Listing updated successfully!');
+        toast.success('Establishment updated successfully!');
       } else {
         await createMutation.mutateAsync({
           owner_id: user?.id,
+          owner_email: user?.email,
           name: data.name.trim(),
           category: data.category,
           description: data.description.trim(),
@@ -179,37 +283,42 @@ export const BusinessDashboard: React.FC = () => {
           lat: parseFloat(data.lat) || 18.9217,
           lng: parseFloat(data.lng) || 72.8332,
           phone: data.phone?.trim() || null,
-          website: data.website?.trim() || null,
-          price_level: data.price_level,
+          website: finalWebsite,
+          price_level: formattedPrice,
           hours: hoursObj,
           photos: [photoObj],
-          status: initialStatus,
+          status: 'approved',
           featured: false
         });
-        setFeedback(
-          isApproved
-            ? 'Listing created and published successfully!'
-            : 'Listing created in PENDING review mode. Awaiting admin approval.'
-        );
+        toast.success('🎉 Establishment successfully registered and published!');
       }
-      setTimeout(() => setFeedback(null), 4000);
       setModalOpen(false);
       setEditingId(null);
+      reset();
+      await refetchListings();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to save listing';
-      alert(`Error saving listing: ${msg}`);
+      const msg = err instanceof Error ? err.message : 'Notice while saving listing';
+      toast.info(msg);
+      setModalOpen(false);
+      setEditingId(null);
+      reset();
+      await refetchListings();
     }
   };
 
   const handleDeleteListing = async (id: string, listingName: string) => {
+    if (!isApproved) {
+      toast.error('Action blocked: Only approved providers can manage or delete listings. Awaiting admin approval.');
+      return;
+    }
     if (!window.confirm(`Are you sure you want to delete "${listingName}"?`)) return;
     try {
       await deleteMutation.mutateAsync(id);
-      setFeedback(`Deleted "${listingName}"`);
-      setTimeout(() => setFeedback(null), 3000);
+      await refetchListings();
+      toast.success(`Deleted "${listingName}" successfully`);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to delete listing';
-      alert(`Error deleting listing: ${msg}`);
+      toast.error(`Error deleting listing: ${msg}`);
     }
   };
 
@@ -236,39 +345,30 @@ export const BusinessDashboard: React.FC = () => {
                 Your Provider Account is Pending Admin Approval
               </h2>
               <p className="text-xs sm:text-sm text-sunset-muted max-w-3xl leading-relaxed">
-                You can draft and preview your listings below, but they will remain hidden from the public until our admin team verifies your establishment credentials. Once approved, your listings go live instantly.
+                An administrator must review and approve your provider application in the Admin Dashboard before you can list your shop or establishment. Once approved by an Admin, listing creation will unlock automatically.
               </p>
             </div>
           </div>
-          <Link
-            to="/settings"
-            className="px-4 py-2 rounded-xl glass-panel text-xs font-semibold text-sunset-text hover:text-sunset-accent border border-sunset-border whitespace-nowrap"
-          >
-            Review Business Profile
-          </Link>
+          <div className="flex flex-wrap items-center gap-2 self-start md:self-auto flex-shrink-0">
+            <button
+              onClick={handleCheckApproval}
+              disabled={checkingStatus}
+              className="px-4 py-2 rounded-xl btn-accent text-xs font-semibold flex items-center gap-1.5 shadow-md hover:scale-105 transition-all disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${checkingStatus ? 'animate-spin' : ''}`} />
+              {checkingStatus ? 'Checking...' : 'Check Status'}
+            </button>
+
+            <Link
+              to="/settings"
+              className="px-4 py-2 rounded-xl glass-panel text-xs font-semibold text-sunset-text hover:text-sunset-accent border border-sunset-border whitespace-nowrap transition-colors"
+            >
+              Review Business Profile
+            </Link>
+          </div>
         </div>
       )}
 
-      {providerStatus === 'approved' && (
-        <div className="p-5 rounded-3xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between gap-4 animate-fade-in shadow-lg">
-          <div className="flex items-center gap-3.5">
-            <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center flex-shrink-0">
-              <ShieldCheck className="w-5 h-5" />
-            </div>
-            <div>
-              <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider block">
-                Verified LocalLens Provider
-              </span>
-              <p className="text-xs text-sunset-muted">
-                Your establishment credentials are fully verified. All published listings are live and visible to tourists.
-              </p>
-            </div>
-          </div>
-          <span className="hidden sm:inline-block px-3 py-1 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 uppercase">
-            Active
-          </span>
-        </div>
-      )}
 
       {providerStatus === 'rejected' && (
         <div className="p-6 rounded-3xl bg-red-500/10 border border-red-500/30 flex flex-col md:flex-row items-start md:items-center justify-between gap-4 animate-fade-in shadow-xl">
@@ -321,26 +421,54 @@ export const BusinessDashboard: React.FC = () => {
 
       {/* Header Info Card */}
       <div className="glass-panel p-6 sm:p-8 rounded-3xl flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-        <div className="space-y-1">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold bg-sunset-accent/15 text-sunset-accent border border-sunset-accent/25 uppercase font-serif">
-            <Building className="w-4 h-4" />
-            <span>Establishment Control Deck</span>
+        <div className="flex items-center gap-4">
+          {user?.avatar ? (
+            <img
+              src={user.avatar}
+              alt={user.name || 'User Avatar'}
+              className="w-16 h-16 rounded-2xl object-cover border-2 border-sunset-accent/40 shadow-lg"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
+            />
+          ) : (
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-sunset-accent to-amber-500 text-white font-bold text-xl flex items-center justify-center shadow-lg border-2 border-white/10 flex-shrink-0">
+              {(user?.name || user?.email || 'U').charAt(0).toUpperCase()}
+            </div>
+          )}
+          <div className="space-y-1">
+            {role === 'admin' ? (
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold bg-purple-500/15 text-purple-400 border border-purple-500/25 uppercase font-serif">
+                <ShieldCheck className="w-4 h-4" />
+                <span>Administrator Direct Listing Mode</span>
+              </div>
+            ) : (
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold bg-sunset-accent/15 text-sunset-accent border border-sunset-accent/25 uppercase font-serif">
+                <Building className="w-4 h-4" />
+                <span>Establishment Control Deck</span>
+              </div>
+            )}
+            <h1 className="text-2xl sm:text-3xl font-extrabold font-serif text-sunset-text">
+              {role === 'admin' ? 'Curate & Publish Establishments' : (user?.business_name || `${user?.name || 'Provider'}'s Portal`)}
+            </h1>
+            <p className="text-xs sm:text-sm text-sunset-muted">
+              Signed in as <span className="font-semibold text-sunset-text">{user?.name}</span> ({user?.email}) {role === 'admin' && '· Verified Administrator'}
+            </p>
           </div>
-          <h1 className="text-3xl sm:text-4xl font-extrabold font-serif text-sunset-text">
-            {user?.business_name || `${user?.name}'s Portal`}
-          </h1>
-          <p className="text-xs sm:text-sm text-sunset-muted">
-            Manage your verified presence, photos, timings, and monitor tourist engagement.
-          </p>
         </div>
 
         <button
           type="button"
           onClick={openCreateModal}
-          className="btn-accent px-5 py-3 text-xs sm:text-sm flex items-center gap-2 shadow-lg hover:scale-105 transition-all"
+          className={`px-5 py-3 text-xs sm:text-sm flex items-center justify-center gap-2 rounded-2xl font-bold transition-all shadow-lg w-full md:w-auto ${
+            isApproved
+              ? 'btn-accent hover:scale-105'
+              : 'bg-sunset-border/40 text-sunset-muted border border-sunset-border hover:border-amber-400/50 cursor-pointer'
+          }`}
+          title={isApproved ? (role === 'admin' ? 'List a new establishment as Admin' : 'Add a new establishment') : 'Admin approval required before you can list your shop'}
         >
-          <Plus className="w-4 h-4 stroke-[3]" />
-          <span>Add New Establishment</span>
+          {isApproved ? <Plus className="w-4 h-4 stroke-[3]" /> : <Lock className="w-4 h-4 text-amber-400" />}
+          <span>{isApproved ? 'Add New Establishment' : 'Listing Locked (Awaiting Admin Approval)'}</span>
         </button>
       </div>
 
@@ -353,7 +481,7 @@ export const BusinessDashboard: React.FC = () => {
       )}
 
       {/* Overview Metric Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         
         <div className="glass-card p-5 rounded-2xl space-y-2">
           <span className="text-xs uppercase font-bold text-sunset-muted">Active Listings</span>
@@ -412,14 +540,18 @@ export const BusinessDashboard: React.FC = () => {
             </p>
             <button
               onClick={openCreateModal}
-              className="btn-accent px-5 py-2.5 text-xs inline-flex items-center gap-2"
+              className={`px-5 py-2.5 text-xs inline-flex items-center gap-2 rounded-xl font-bold transition-all ${
+                isApproved
+                  ? 'btn-accent hover:scale-105'
+                  : 'bg-sunset-border/40 text-sunset-muted border border-sunset-border hover:border-amber-400/50 cursor-pointer'
+              }`}
             >
-              <Plus className="w-4 h-4 stroke-[3]" />
-              <span>Create Establishment</span>
+              {isApproved ? <Plus className="w-4 h-4 stroke-[3]" /> : <Lock className="w-4 h-4 text-amber-400" />}
+              <span>{isApproved ? 'Create Establishment' : 'Creation Locked (Requires Admin Approval)'}</span>
             </button>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
             {listings.map((item) => (
               <div
                 key={item.id}
@@ -442,12 +574,12 @@ export const BusinessDashboard: React.FC = () => {
                     <div className="absolute top-3 right-3">
                       <span
                         className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase backdrop-blur-md ${
-                          item.status === 'approved' && isApproved
-                            ? 'bg-emerald-500/80 text-white'
-                            : 'bg-amber-500/80 text-slate-950'
+                          item.status === 'pending'
+                            ? 'bg-amber-500/80 text-slate-950'
+                            : 'bg-emerald-500/80 text-white'
                         }`}
                       >
-                        {item.status === 'approved' && isApproved ? 'Live Public' : 'Pending Review'}
+                        {item.status === 'pending' ? 'Pending Review' : 'Live Public'}
                       </span>
                     </div>
                   </div>
@@ -492,17 +624,27 @@ export const BusinessDashboard: React.FC = () => {
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
+                      disabled={!isApproved}
                       onClick={() => openEditModal(item)}
-                      className="p-2 rounded-xl bg-sunset-surface hover:bg-sunset-accent hover:text-sunset-on-accent text-sunset-muted transition-colors border border-sunset-border"
-                      title="Edit Establishment Details"
+                      className={`p-2 rounded-xl transition-colors border border-sunset-border ${
+                        isApproved
+                          ? 'bg-sunset-surface hover:bg-sunset-accent hover:text-sunset-on-accent text-sunset-muted'
+                          : 'bg-sunset-border/30 text-sunset-muted/40 cursor-not-allowed opacity-60'
+                      }`}
+                      title={isApproved ? "Edit Establishment Details" : "Editing locked: Admin approval required"}
                     >
                       <Edit3 className="w-3.5 h-3.5" />
                     </button>
                     <button
                       type="button"
+                      disabled={!isApproved}
                       onClick={() => handleDeleteListing(item.id, item.name)}
-                      className="p-2 rounded-xl bg-sunset-surface hover:bg-red-500 hover:text-white text-sunset-muted transition-colors border border-sunset-border"
-                      title="Delete Listing"
+                      className={`p-2 rounded-xl transition-colors border border-sunset-border ${
+                        isApproved
+                          ? 'bg-sunset-surface hover:bg-red-500 hover:text-white text-sunset-muted'
+                          : 'bg-sunset-border/30 text-sunset-muted/40 cursor-not-allowed opacity-60'
+                      }`}
+                      title={isApproved ? "Delete Listing" : "Deletion locked: Admin approval required"}
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -519,8 +661,8 @@ export const BusinessDashboard: React.FC = () => {
           CREATE / EDIT ESTABLISHMENT MODAL
          ========================================================================= */}
       {modalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-black/60 backdrop-blur-sm animate-fade-in overflow-y-auto py-10">
-          <div className="glass-panel max-w-2xl w-full p-6 sm:p-8 rounded-3xl shadow-2xl space-y-6 border border-sunset-border my-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-black/60 backdrop-blur-sm animate-fade-in overflow-y-auto py-6 sm:py-10">
+          <div className="glass-panel max-w-2xl w-full max-h-[90vh] overflow-y-auto p-5 sm:p-8 rounded-3xl shadow-2xl space-y-6 border border-sunset-border my-auto">
             
             <div className="flex items-center justify-between border-b border-sunset-border pb-4">
               <h3 className="text-xl font-bold font-serif text-sunset-text">
@@ -571,18 +713,17 @@ export const BusinessDashboard: React.FC = () => {
                   )}
                 </div>
 
-                {/* Price Level */}
+                {/* Price / Amount Manual Input */}
                 <div>
-                  <label className="text-xs font-semibold text-sunset-text mb-1 block">Price Level</label>
-                  <select
+                  <label className="text-xs font-semibold text-sunset-text mb-1 block">
+                    Approx. Price / Amount *
+                  </label>
+                  <input
+                    type="text"
                     {...register('price_level')}
-                    className="w-full h-11 glass-input rounded-xl px-3 text-xs"
-                  >
-                    <option value="₹" className="bg-sunset-bg text-sunset-text">₹ (Budget / Street)</option>
-                    <option value="₹₹" className="bg-sunset-bg text-sunset-text">₹₹ (Moderate)</option>
-                    <option value="₹₹₹" className="bg-sunset-bg text-sunset-text">₹₹₹ (Upscale)</option>
-                    <option value="₹₹₹₹" className="bg-sunset-bg text-sunset-text">₹₹₹₹ (Heritage Luxury)</option>
-                  </select>
+                    placeholder="e.g. ₹500 for two, ₹1,200, ₹350"
+                    className="w-full h-11 glass-input rounded-xl px-4 text-xs"
+                  />
                   {errors.price_level && (
                     <p className="mt-1 text-xs text-red-400">{errors.price_level.message}</p>
                   )}
@@ -630,18 +771,100 @@ export const BusinessDashboard: React.FC = () => {
                   )}
                 </div>
 
-                {/* Photo URL */}
-                <div className="sm:col-span-2">
-                  <label className="text-xs font-semibold text-sunset-text mb-1 block">Cover Photo URL</label>
-                  <input
-                    type="url"
-                    {...register('photoUrl')}
-                    placeholder="https://images.unsplash.com/..."
-                    className="w-full h-11 glass-input rounded-xl px-4 text-xs"
-                  />
-                  {errors.photoUrl && (
-                    <p className="mt-1 text-xs text-red-400">{errors.photoUrl.message}</p>
+                {/* Cover Photo Upload & Storage */}
+                <div className="sm:col-span-2 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-semibold text-sunset-text block">
+                      Cover Photo (Supabase Storage) *
+                    </label>
+                    <span className="text-[11px] text-sunset-muted">
+                      JPEG, PNG, WebP • Max 5MB
+                    </span>
+                  </div>
+
+                  {/* Photo Preview if photoUrl exists */}
+                  {currentPhotoUrl ? (
+                    <div className="relative rounded-2xl overflow-hidden border border-sunset-border bg-black/20 group">
+                      <img
+                        src={currentPhotoUrl}
+                        alt="Listing Cover Preview"
+                        className="w-full h-44 object-cover"
+                      />
+                      <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="px-3 py-1.5 rounded-xl bg-white/20 hover:bg-white/30 backdrop-blur-md text-white text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                        >
+                          <UploadCloud className="w-4 h-4" /> Change Photo
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleRemovePhoto}
+                          className="px-3 py-1.5 rounded-xl bg-red-500/80 hover:bg-red-600 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4" /> Remove
+                        </button>
+                      </div>
+                      <div className="absolute bottom-2 left-2 px-2 py-0.5 rounded-md bg-black/60 backdrop-blur-md text-[10px] text-white/90">
+                        Cover Preview
+                      </div>
+                    </div>
+                  ) : (
+                    /* Dropzone / Upload button */
+                    <div
+                      onClick={() => fileInputRef.current?.click()}
+                      className="border-2 border-dashed border-sunset-border hover:border-sunset-accent/50 rounded-2xl p-6 text-center cursor-pointer transition-all hover:bg-sunset-accent/5 flex flex-col items-center justify-center gap-2"
+                    >
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        className="hidden"
+                        onChange={handlePhotoFileChange}
+                      />
+                      {uploadingPhoto ? (
+                        <div className="flex flex-col items-center gap-2 py-2">
+                          <Loader2 className="w-8 h-8 text-sunset-accent animate-spin" />
+                          <span className="text-xs font-medium text-sunset-accent">Uploading photo to storage...</span>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="w-12 h-12 rounded-xl bg-sunset-accent/10 border border-sunset-accent/20 text-sunset-accent flex items-center justify-center">
+                            <UploadCloud className="w-6 h-6" />
+                          </div>
+                          <div>
+                            <p className="text-xs font-bold text-sunset-text">
+                              Click to upload or drag photo here
+                            </p>
+                            <p className="text-[11px] text-sunset-muted mt-0.5">
+                              JPEG, PNG, WebP up to 5 MB
+                            </p>
+                          </div>
+                        </>
+                      )}
+                    </div>
                   )}
+
+                  {photoUploadError && (
+                    <p className="text-xs text-red-400 font-medium">{photoUploadError}</p>
+                  )}
+
+                  {/* Fallback Direct URL field */}
+                  <div className="pt-1">
+                    <label className="text-[11px] text-sunset-muted block mb-1">
+                      Or paste an existing photo web URL:
+                    </label>
+                    <input
+                      type="text"
+                      {...register('photoUrl')}
+                      placeholder="https://images.unsplash.com/..."
+                      className="w-full h-9 glass-input rounded-xl px-3 text-xs"
+                    />
+                    {errors.photoUrl && (
+                      <p className="mt-1 text-xs text-red-400">{errors.photoUrl.message}</p>
+                    )}
+                  </div>
                 </div>
 
                 {/* Opening Hours */}
@@ -660,11 +883,13 @@ export const BusinessDashboard: React.FC = () => {
 
                 {/* Website */}
                 <div>
-                  <label className="text-xs font-semibold text-sunset-text mb-1 block">Official Website</label>
+                  <label className="text-xs font-semibold text-sunset-text mb-1 block">
+                    Official Website <span className="text-sunset-muted font-normal">(Optional)</span>
+                  </label>
                   <input
-                    type="url"
+                    type="text"
                     {...register('website')}
-                    placeholder="https://example.com"
+                    placeholder="e.g. https://yourshop.com (leave blank if none)"
                     className="w-full h-11 glass-input rounded-xl px-4 text-xs"
                   />
                   {errors.website && (

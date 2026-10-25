@@ -13,9 +13,13 @@ import { reviewFormSchema, ReviewFormValues } from '../features/dashboard';
 import { MapComponent } from '../components/MapComponent';
 import { useFavorites } from '../hooks/useFavorites';
 import { useAuth } from '../features/auth';
+import { useLanguage } from '../features/i18n';
+import { useToast } from '../components/Toast';
 
 export const ListingDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const toast = useToast();
+  const { t } = useLanguage();
 
   // TanStack Queries & Mutations
   const { data: listing, isLoading: loadingListing } = useListingById(id);
@@ -78,6 +82,7 @@ export const ListingDetailPage: React.FC = () => {
   const handleShare = () => {
     navigator.clipboard.writeText(window.location.href);
     setCopied(true);
+    toast.success('Listing link copied to clipboard!');
     setTimeout(() => setCopied(false), 2000);
   };
 
@@ -94,10 +99,11 @@ export const ListingDetailPage: React.FC = () => {
       });
       resetReviewForm({ rating: 5, comment: '' });
       setReviewSuccess(true);
+      toast.success('Review posted successfully!');
       setTimeout(() => setReviewSuccess(false), 3000);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to add review';
-      alert(`Error submitting review: ${msg}`);
+      toast.error(`Error submitting review: ${msg}`);
     }
   };
 
@@ -113,7 +119,7 @@ export const ListingDetailPage: React.FC = () => {
           className="inline-flex items-center gap-2 text-xs font-semibold text-sunset-muted hover:text-sunset-accent transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span>Back to Explore</span>
+          <span>{t('listingDetail.backToExplore')}</span>
         </Link>
 
         <div className="flex items-center gap-2">
@@ -123,7 +129,7 @@ export const ListingDetailPage: React.FC = () => {
             className="px-3 py-1.5 rounded-xl glass-panel text-xs font-semibold text-sunset-muted hover:text-sunset-text border border-sunset-border flex items-center gap-1.5 transition-colors"
           >
             {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Share2 className="w-3.5 h-3.5" />}
-            <span>{copied ? 'Link Copied!' : 'Share'}</span>
+            <span>{copied ? t('listingDetail.shareCopied') : t('listingDetail.share')}</span>
           </button>
 
           {/* Save / Favorite */}
@@ -136,7 +142,7 @@ export const ListingDetailPage: React.FC = () => {
             }`}
           >
             <Heart className={`w-3.5 h-3.5 ${isFavorited ? 'fill-rose-500 text-rose-500' : ''}`} />
-            <span>{isFavorited ? 'Saved' : 'Save'}</span>
+            <span>{isFavorited ? t('listingDetail.saved') : t('listingDetail.save')}</span>
           </button>
         </div>
       </div>
@@ -149,41 +155,43 @@ export const ListingDetailPage: React.FC = () => {
           
           {/* Main Photo Gallery */}
           <div className="space-y-3">
-            <div className="relative aspect-[16/10] rounded-3xl overflow-hidden glass-card border border-sunset-border bg-sunset-bg shadow-2xl">
+            <div className="relative aspect-[4/3] sm:aspect-[16/10] rounded-3xl overflow-hidden glass-card border border-sunset-border bg-sunset-bg shadow-2xl">
               <img
                 src={currentPhoto || 'https://images.unsplash.com/photo-1570168007204-dfb528c6958f?auto=format&fit=crop&w=1200&q=80'}
                 alt={cleanName}
                 className="w-full h-full object-cover transition-all duration-300"
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/30 pointer-events-none" />
+              <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-black/40 pointer-events-none" />
               
               {/* Top Category and Sample Tag */}
-              <div className="absolute top-4 left-4 flex items-center gap-2">
-                <span className="px-3 py-1 rounded-full text-xs font-bold bg-sunset-accent text-sunset-on-accent uppercase tracking-wider shadow-lg">
-                  {listing.category}
-                </span>
-                {isSample && (
-                  <span className="px-2.5 py-1 rounded-full text-[11px] font-bold bg-black/80 text-sunset-accent border border-white/20 uppercase">
-                    Sample Data
+              <div className="absolute top-3 sm:top-4 left-3 sm:left-4 right-3 sm:right-4 flex items-center justify-between pointer-events-none">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="px-2.5 sm:px-3 py-1 rounded-full text-[11px] sm:text-xs font-bold bg-sunset-accent text-sunset-on-accent uppercase tracking-wider shadow-lg">
+                    {listing.category}
                   </span>
-                )}
+                  {isSample && (
+                    <span className="px-2 sm:px-2.5 py-1 rounded-full text-[10px] sm:text-[11px] font-bold bg-black/80 text-sunset-accent border border-white/20 uppercase">
+                      Sample Data
+                    </span>
+                  )}
+                </div>
               </div>
 
-              <div className="absolute bottom-4 left-4 right-4 flex items-end justify-between">
-                <div>
-                  <h1 className="text-2xl sm:text-4xl font-extrabold text-white font-serif drop-shadow-md">
+              <div className="absolute bottom-3 sm:bottom-4 left-3 sm:left-4 right-3 sm:right-4 flex flex-col sm:flex-row sm:items-end justify-between gap-2.5">
+                <div className="min-w-0 pr-1">
+                  <h1 className="text-xl sm:text-3xl md:text-4xl font-extrabold text-white font-serif drop-shadow-md break-words">
                     {cleanName}
                   </h1>
                   <p className="text-xs sm:text-sm text-slate-200 flex items-center gap-1.5 mt-1 drop-shadow">
-                    <MapPin className="w-4 h-4 text-sunset-accent" />
-                    <span>{listing.area} • Mumbai</span>
+                    <MapPin className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-sunset-accent flex-shrink-0" />
+                    <span className="truncate">{listing.area} • Mumbai</span>
                   </p>
                 </div>
 
-                <div className="px-3 py-1.5 rounded-xl bg-black/80 backdrop-blur-md border border-white/10 flex items-center gap-1 text-sunset-accent font-bold text-sm">
-                  <Star className="w-4 h-4 fill-sunset-accent text-sunset-accent" />
+                <div className="self-start sm:self-auto flex-shrink-0 px-3 py-1.5 rounded-xl bg-black/80 backdrop-blur-md border border-white/10 flex items-center gap-1 text-sunset-accent font-bold text-xs sm:text-sm">
+                  <Star className="w-3.5 h-3.5 sm:w-4 sm:h-4 fill-sunset-accent text-sunset-accent flex-shrink-0" />
                   <span>{listing.rating.toFixed(1)}</span>
-                  <span className="text-xs text-slate-300 font-normal">({listing.review_count})</span>
+                  <span className="text-[11px] sm:text-xs text-slate-300 font-normal">({listing.review_count})</span>
                 </div>
               </div>
             </div>
@@ -227,7 +235,7 @@ export const ListingDetailPage: React.FC = () => {
                   <MessageSquare className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold font-serif text-sunset-text">Reviews & Community Feedback</h3>
+                  <h3 className="text-lg font-bold font-serif text-sunset-text">{t('listingDetail.reviewsTitle')}</h3>
                   <p className="text-xs text-sunset-muted">{reviews.length} genuine community experiences</p>
                 </div>
               </div>
@@ -240,11 +248,11 @@ export const ListingDetailPage: React.FC = () => {
 
             {/* Write a review form */}
             <form onSubmit={handleSubmit(onReviewSubmit)} className="p-4 rounded-2xl bg-sunset-bg/60 border border-sunset-border space-y-3">
-              <p className="text-xs font-semibold text-sunset-text">Share your verified experience</p>
+              <p className="text-xs font-semibold text-sunset-text">{t('listingDetail.writeReview')}</p>
               
               {/* Star selector */}
               <div className="flex items-center gap-2">
-                <span className="text-xs text-sunset-muted">Rating:</span>
+                <span className="text-xs text-sunset-muted">{t('listingDetail.ratingLabel')}:</span>
                 <div className="flex items-center gap-1">
                   {[1, 2, 3, 4, 5].map((s) => (
                     <button
@@ -288,7 +296,7 @@ export const ListingDetailPage: React.FC = () => {
                   disabled={submittingReview}
                   className="btn-accent px-5 py-2 text-xs font-bold disabled:opacity-50"
                 >
-                  {submittingReview ? 'Submitting...' : 'Post Review'}
+                  {submittingReview ? t('common.loading') : t('listingDetail.submitReview')}
                 </button>
               </div>
             </form>
@@ -336,7 +344,7 @@ export const ListingDetailPage: React.FC = () => {
             <div className="space-y-1">
               <span className="text-xs text-sunset-muted flex items-center gap-1.5 font-semibold">
                 <MapPin className="w-3.5 h-3.5 text-sunset-accent" />
-                Verified Address
+                {t('listingDetail.locationAddress')}
               </span>
               <p className="text-xs sm:text-sm text-sunset-text pl-5">
                 {listing.address || '—'}

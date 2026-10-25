@@ -35,18 +35,18 @@ export function useAdminListings() {
   });
 }
 
-export function useOwnerListings(ownerId?: string) {
+export function useOwnerListings(ownerId?: string, ownerEmail?: string) {
   return useQuery({
-    queryKey: ['owner', 'listings', ownerId],
-    queryFn: () => (ownerId ? fetchListingsByOwner(ownerId) : Promise.resolve([])),
-    enabled: Boolean(ownerId),
+    queryKey: ['owner', 'listings', ownerId, ownerEmail],
+    queryFn: () => (ownerId || ownerEmail ? fetchListingsByOwner(ownerId, ownerEmail) : Promise.resolve([])),
+    enabled: Boolean(ownerId || ownerEmail),
   });
 }
 
 export function useCreateListingMutation() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (newListing: Omit<Listing, 'id' | 'created_at' | 'rating' | 'review_count'>) =>
+    mutationFn: (newListing: Omit<Listing, 'id' | 'created_at' | 'rating' | 'review_count'> & { owner_email?: string }) =>
       createListing(newListing),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: LISTINGS_QUERY_KEY });

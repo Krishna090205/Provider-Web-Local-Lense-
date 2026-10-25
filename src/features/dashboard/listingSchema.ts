@@ -9,9 +9,12 @@ export const listingFormSchema = z.object({
   lat: z.string().refine((val) => !isNaN(Number(val)), { message: 'Must be a valid decimal latitude' }),
   lng: z.string().refine((val) => !isNaN(Number(val)), { message: 'Must be a valid decimal longitude' }),
   phone: z.string().optional(),
-  website: z.string().optional(),
-  price_level: z.string().default('₹₹'),
-  photoUrl: z.string().url('Must be a valid URL').or(z.literal('')),
+  website: z.string().optional().or(z.literal('')),
+  price_level: z.string().min(1, 'Please enter the amount or approximate price (e.g. ₹500 for two)'),
+  photoUrl: z.string().refine(
+    (val) => !val || val.startsWith('http://') || val.startsWith('https://') || val.startsWith('data:image/'),
+    { message: 'Must be a valid web URL or uploaded image' }
+  ),
   hoursText: z.string().min(2, 'Operating hours are required'),
 });
 

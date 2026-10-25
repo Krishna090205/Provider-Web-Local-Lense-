@@ -5,16 +5,18 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import {
   ShieldCheck, Users, Building2, MapPin, Check, X, AlertTriangle,
   Search, Filter, Eye, Star, Clock, AlertCircle, FileText, BarChart3,
-  Calendar, ChevronRight, ShieldAlert, Sparkles, MessageSquare
+  Calendar, ChevronRight, ShieldAlert, Sparkles, MessageSquare, RefreshCw, Plus
 } from 'lucide-react';
 import { useAuth } from '../features/auth';
 import { providerRejectionSchema, ProviderRejectionFormValues } from '../features/admin';
 import { useProviders, useUpdateProviderApprovalMutation } from '../hooks/useProvidersQuery';
-import { Profile, ProviderStatus, Listing, ListingStatus } from '../types';
-import { fetchAllListingsForAdmin, updateListingStatus } from '../lib/store';
+import { Profile, ProviderStatus, Listing, ListingStatus, UserRole } from '../types';
+import { fetchAllListingsForAdmin, updateListingStatus, fetchAllUsers } from '../lib/store';
+import { useToast } from '../components/Toast';
 
 export const AdminDashboard: React.FC = () => {
   const { user, role } = useAuth();
+  const toast = useToast();
 
   // Tab State
   const [activeTab, setActiveTab] = useState<'approvals' | 'listings' | 'stats' | 'users'>('approvals');
@@ -47,8 +49,15 @@ export const AdminDashboard: React.FC = () => {
   const [loadingListings, setLoadingListings] = useState(false);
   const [listingSearch, setListingSearch] = useState('');
 
+  // Real Database Users data
+  const [usersList, setUsersList] = useState<Profile[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+
+  const isAdminEmail = user?.email?.toLowerCase().includes('admin');
+  const effectiveRole: UserRole = (isAdminEmail ? 'admin' : (user?.role || role));
+
   // Route Guard: only admin allowed
-  if (role !== 'admin') {
+  if (effectiveRole !== 'admin') {
     return (
       <div className="min-h-screen pt-32 pb-20 px-4 max-w-2xl mx-auto text-center space-y-6 text-sunset-text">
         <div className="w-16 h-16 rounded-2xl bg-red-500/20 border border-red-500/30 text-red-400 mx-auto flex items-center justify-center">
@@ -80,8 +89,21 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
+  const loadUsers = async () => {
+    setLoadingUsers(true);
+    try {
+      const all = await fetchAllUsers();
+      setUsersList(all);
+    } catch (e) {
+      console.error('Failed to load users', e);
+    } finally {
+      setLoadingUsers(false);
+    }
+  };
+
   useEffect(() => {
     loadListings();
+    loadUsers();
   }, []);
 
   // Handle Provider Approval
@@ -92,11 +114,14 @@ export const AdminDashboard: React.FC = () => {
         status: 'approved',
         adminId: user?.id
       });
-      setActionFeedback(`Approved ${provider.name} (${provider.business_name || 'Provider'})! Listing publishing enabled.`);
+      const msg = `Approved ${provider.name} (${provider.business_name || 'Provider'})! Listing publishing enabled.`;
+      setActionFeedback(msg);
+      toast.success(msg);
       setTimeout(() => setActionFeedback(null), 4000);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to approve';
       setActionFeedback(`Error: ${msg}`);
+      toast.error(msg);
     }
   };
 
@@ -117,14 +142,16 @@ export const AdminDashboard: React.FC = () => {
         note: values.reason.trim(),
         adminId: user?.id
       });
-      setActionFeedback(`Application for ${selectedProvider.name} rejected with reason logged.`);
+      const msg = `Application for ${selectedProvider.name} rejected with reason logged.`;
+      setActionFeedback(msg);
+      toast.warning(msg);
       setTimeout(() => setActionFeedback(null), 4000);
       setRejectModalOpen(false);
       setSelectedProvider(null);
       resetRejectForm();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to reject';
-      alert(`Error rejecting provider: ${msg}`);
+      toast.error(`Error rejecting provider: ${msg}`);
     }
   };
 
@@ -139,11 +166,13 @@ export const AdminDashboard: React.FC = () => {
         note,
         adminId: user?.id
       });
-      setActionFeedback(`Suspended ${provider.name}. Public listings hidden.`);
+      const msg = `Suspended ${provider.name}. Public listings hidden.`;
+      setActionFeedback(msg);
+      toast.info(msg);
       setTimeout(() => setActionFeedback(null), 4000);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to suspend';
-      alert(`Error suspending provider: ${msg}`);
+      toast.error(`Error suspending provider: ${msg}`);
     }
   };
 
@@ -152,7 +181,9 @@ export const AdminDashboard: React.FC = () => {
     const updated = await updateListingStatus(listing.id, newStatus);
     if (updated) {
       setListings(prev => prev.map(l => l.id === listing.id ? updated : l));
-      setActionFeedback(`Listing "${listing.name}" set to ${newStatus.toUpperCase()}`);
+      const msg = `Listing "${listing.name}" set to ${newStatus.toUpperCase()}`;
+      setActionFeedback(msg);
+      toast.success(msg);
       setTimeout(() => setActionFeedback(null), 3000);
     }
   };
@@ -191,32 +222,58 @@ export const AdminDashboard: React.FC = () => {
       
       {/* Admin Header */}
       <div className="glass-panel p-6 sm:p-8 rounded-3xl flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-        <div className="space-y-1">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold bg-sunset-accent/15 text-sunset-accent border border-sunset-accent/25 uppercase font-serif">
-            <ShieldCheck className="w-4 h-4" />
-            <span>Administrative Command Console</span>
+        <div className="flex items-center gap-4">
+          {user?.avatar ? (
+            <img
+              src={user.avatar}
+              alt={user.name || 'Admin Avatar'}
+              className="w-16 h-16 rounded-2xl object-cover border-2 border-sunset-accent/40 shadow-lg"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
+            />
+          ) : (
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-sunset-accent to-amber-500 text-white font-bold text-xl flex items-center justify-center shadow-lg border-2 border-white/10 flex-shrink-0">
+              {(user?.name || user?.email || 'A').charAt(0).toUpperCase()}
+            </div>
+          )}
+          <div className="space-y-1">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-bold bg-sunset-accent/15 text-sunset-accent border border-sunset-accent/25 uppercase font-serif">
+              <ShieldCheck className="w-4 h-4" />
+              <span>Administrative Command Console</span>
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-extrabold font-serif text-sunset-text">
+              Admin Curation Center
+            </h1>
+            <p className="text-xs sm:text-sm text-sunset-muted">
+              Signed in as <span className="font-semibold text-sunset-text">{user?.name}</span> ({user?.email}) · Full Platform Control
+            </p>
           </div>
-          <h1 className="text-3xl sm:text-4xl font-extrabold font-serif text-sunset-text">
-            Admin Curation Center
-          </h1>
-          <p className="text-xs sm:text-sm text-sunset-muted">
-            Review and approve provider credentials, moderate Mumbai listings, and safeguard authentic local data.
-          </p>
         </div>
 
-        {/* Quick Summary Pill */}
-        <div className="flex items-center gap-3 bg-sunset-bg/60 p-3 rounded-2xl border border-sunset-border">
-          <div className="text-center px-3 border-r border-sunset-border">
-            <span className="block text-xl font-bold text-sunset-accent">{pendingCount}</span>
-            <span className="text-[10px] uppercase font-semibold text-sunset-muted">Pending</span>
-          </div>
-          <div className="text-center px-3 border-r border-sunset-border">
-            <span className="block text-xl font-bold text-emerald-400">{approvedCount}</span>
-            <span className="text-[10px] uppercase font-semibold text-sunset-muted">Approved</span>
-          </div>
-          <div className="text-center px-3">
-            <span className="block text-xl font-bold text-sunset-text">{listings.length}</span>
-            <span className="text-[10px] uppercase font-semibold text-sunset-muted">Listings</span>
+        {/* Admin Actions & Quick Summary Pill */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+          <Link
+            to="/dashboard/business"
+            className="inline-flex items-center gap-2 px-3.5 py-2.5 rounded-2xl text-xs font-semibold glass-panel border border-sunset-border hover:border-sunset-accent/40 text-sunset-text hover:text-sunset-accent transition-all group shadow-sm"
+            title="Create and publish establishments as Administrator"
+          >
+            <Building2 className="w-4 h-4 text-sunset-accent group-hover:scale-110 transition-transform" />
+            <span>List Establishment</span>
+          </Link>
+          <div className="flex items-center gap-3 bg-sunset-bg/60 p-2.5 rounded-2xl border border-sunset-border">
+            <div className="text-center px-3 border-r border-sunset-border">
+              <span className="block text-xl font-bold text-sunset-accent">{pendingCount}</span>
+              <span className="text-[10px] uppercase font-semibold text-sunset-muted">Pending</span>
+            </div>
+            <div className="text-center px-3 border-r border-sunset-border">
+              <span className="block text-xl font-bold text-emerald-400">{approvedCount}</span>
+              <span className="text-[10px] uppercase font-semibold text-sunset-muted">Approved</span>
+            </div>
+            <div className="text-center px-3">
+              <span className="block text-xl font-bold text-sunset-text">{listings.length}</span>
+              <span className="text-[10px] uppercase font-semibold text-sunset-muted">Listings</span>
+            </div>
           </div>
         </div>
       </div>
@@ -301,7 +358,7 @@ export const AdminDashboard: React.FC = () => {
               />
             </div>
 
-            {/* Status Pills Filter */}
+            {/* Status Pills Filter & Refresh */}
             <div className="flex items-center gap-1.5 flex-wrap">
               <span className="text-xs text-sunset-muted mr-1 flex items-center gap-1">
                 <Filter className="w-3.5 h-3.5" />
@@ -320,6 +377,14 @@ export const AdminDashboard: React.FC = () => {
                   {st}
                 </button>
               ))}
+              <button
+                type="button"
+                onClick={() => refetchProviders()}
+                className="p-1.5 rounded-xl glass-panel border border-sunset-border text-sunset-muted hover:text-sunset-accent transition-colors ml-1"
+                title="Refresh provider records"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${loadingProviders ? 'animate-spin' : ''}`} />
+              </button>
             </div>
 
           </div>
@@ -327,7 +392,7 @@ export const AdminDashboard: React.FC = () => {
           {/* Providers Table */}
           <div className="glass-panel rounded-3xl overflow-hidden border border-sunset-border">
             <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
+              <table className="w-full min-w-[700px] text-left border-collapse text-xs">
                 <thead>
                   <tr className="border-b border-sunset-border bg-sunset-bg/80 text-sunset-muted uppercase font-semibold text-[11px] font-serif">
                     <th className="py-4 px-6">Provider / Contact</th>
@@ -473,8 +538,8 @@ export const AdminDashboard: React.FC = () => {
       {activeTab === 'listings' && (
         <section className="space-y-6 animate-fade-in">
           
-          <div className="glass-panel p-4 rounded-2xl flex items-center justify-between gap-4">
-            <div className="relative flex-1">
+          <div className="glass-panel p-4 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="relative flex-1 w-full">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-sunset-muted" />
               <input
                 type="text"
@@ -484,12 +549,21 @@ export const AdminDashboard: React.FC = () => {
                 className="w-full h-10 glass-input rounded-xl pl-10 pr-4 text-xs"
               />
             </div>
-            <span className="text-xs text-sunset-muted font-semibold">
-              Showing {filteredListings.length} listings
-            </span>
+            <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
+              <span className="text-xs text-sunset-muted font-semibold whitespace-nowrap">
+                Showing {filteredListings.length} listings
+              </span>
+              <Link
+                to="/dashboard/business"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold glass-panel border border-sunset-border hover:border-sunset-accent/40 text-sunset-text hover:text-sunset-accent transition-all whitespace-nowrap"
+              >
+                <Plus className="w-3.5 h-3.5 text-sunset-accent" />
+                <span>Create Establishment</span>
+              </Link>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
             {filteredListings.map((listing) => (
               <div
                 key={listing.id}
@@ -572,7 +646,7 @@ export const AdminDashboard: React.FC = () => {
           TAB 3: OVERVIEW STATS
          ========================================================================= */}
       {activeTab === 'stats' && (
-        <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 animate-fade-in">
+        <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6 animate-fade-in">
           
           <div className="glass-card p-6 rounded-3xl space-y-2">
             <span className="text-xs uppercase font-bold tracking-wider text-sunset-accent">Total Providers</span>
@@ -606,56 +680,78 @@ export const AdminDashboard: React.FC = () => {
          ========================================================================= */}
       {activeTab === 'users' && (
         <section className="glass-panel p-6 sm:p-8 rounded-3xl space-y-4 animate-fade-in">
-          <h2 className="text-xl font-bold font-serif text-sunset-text">Active Platform Users</h2>
-          <p className="text-xs text-sunset-muted">
-            Overview of user roles. Role elevation to Admin can only be performed via SQL migrations or server-side admin credentials.
-          </p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-bold font-serif text-sunset-text">Active Platform Users</h2>
+              <p className="text-xs text-sunset-muted">
+                Real users authenticated via Supabase database profiles.
+              </p>
+            </div>
+            <button
+              onClick={loadUsers}
+              disabled={loadingUsers}
+              className="px-3 py-1.5 glass-panel text-xs rounded-xl flex items-center gap-1.5 text-sunset-muted hover:text-sunset-text transition-colors"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loadingUsers ? 'animate-spin' : ''}`} />
+              <span>Refresh</span>
+            </button>
+          </div>
 
           <div className="space-y-3 pt-3">
-            <div className="p-4 rounded-2xl bg-sunset-bg/60 border border-sunset-border flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-sunset-accent/20 flex items-center justify-center text-sunset-accent font-bold">
-                  AK
-                </div>
-                <div>
-                  <p className="text-sm font-bold text-sunset-text">Arun Kumar</p>
-                  <p className="text-xs text-sunset-muted">arun.tourist@locallens.in</p>
-                </div>
+            {loadingUsers ? (
+              <div className="py-8 text-center text-xs text-sunset-muted">Loading database users...</div>
+            ) : usersList.length === 0 ? (
+              <div className="p-8 rounded-2xl bg-sunset-bg/40 border border-sunset-border text-center text-xs text-sunset-muted">
+                No users found. Registered users from Supabase will appear here automatically.
               </div>
-              <span className="px-3 py-1 rounded-full text-xs font-bold uppercase bg-sunset-accent/20 text-sunset-accent">
-                Tourist
-              </span>
-            </div>
+            ) : (
+              usersList.map((u) => {
+                const initials = (u.name || u.email || 'U')
+                  .split(' ')
+                  .map(n => n[0])
+                  .slice(0, 2)
+                  .join('')
+                  .toUpperCase();
+                const isUserAdmin = u.role === 'admin';
+                const isUserProvider = u.role === 'provider';
 
-            <div className="p-4 rounded-2xl bg-sunset-bg/60 border border-sunset-border flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-emerald-500/20 flex items-center justify-center text-emerald-400 font-bold">
-                  PS
-                </div>
-                <div>
-                  <p className="text-sm font-bold text-sunset-text">Priya Shenoy</p>
-                  <p className="text-xs text-sunset-muted">priya@malabarstays.in (Malabar Heritage Stays)</p>
-                </div>
-              </div>
-              <span className="px-3 py-1 rounded-full text-xs font-bold uppercase bg-emerald-500/20 text-emerald-400">
-                Provider (Approved)
-              </span>
-            </div>
-
-            <div className="p-4 rounded-2xl bg-sunset-bg/60 border border-sunset-border flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-sunset-accent-hot/20 flex items-center justify-center text-sunset-accent-hot font-bold">
-                  AD
-                </div>
-                <div>
-                  <p className="text-sm font-bold text-sunset-text">Administrator Curation Team</p>
-                  <p className="text-xs text-sunset-muted">admin.locallens@mumbai.gov.in</p>
-                </div>
-              </div>
-              <span className="px-3 py-1 rounded-full text-xs font-bold uppercase bg-sunset-accent-hot/20 text-sunset-accent-hot">
-                Admin
-              </span>
-            </div>
+                return (
+                  <div key={u.id} className="p-4 rounded-2xl bg-sunset-bg/60 border border-sunset-border flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      {u.avatar ? (
+                        <img src={u.avatar} alt={u.name} className="w-10 h-10 rounded-full object-cover ring-2 ring-sunset-accent/20 flex-shrink-0" />
+                      ) : (
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-xs flex-shrink-0 ${
+                          isUserAdmin
+                            ? 'bg-sunset-accent-hot/20 text-sunset-accent-hot'
+                            : isUserProvider
+                            ? 'bg-emerald-500/20 text-emerald-400'
+                            : 'bg-sunset-accent/20 text-sunset-accent'
+                        }`}>
+                          {initials}
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold text-sunset-text truncate">{u.name || 'Anonymous User'}</p>
+                        <p className="text-xs text-sunset-muted truncate">
+                          {u.email || u.id}
+                          {u.business_name ? ` (${u.business_name})` : ''}
+                        </p>
+                      </div>
+                    </div>
+                    <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase self-start sm:self-auto flex-shrink-0 ${
+                      isUserAdmin
+                        ? 'bg-sunset-accent-hot/20 text-sunset-accent-hot'
+                        : isUserProvider
+                        ? 'bg-emerald-500/20 text-emerald-400'
+                        : 'bg-sunset-accent/20 text-sunset-accent'
+                    }`}>
+                      {u.role || 'Tourist'}{isUserProvider && u.provider_status ? ` (${u.provider_status})` : ''}
+                    </span>
+                  </div>
+                );
+              })
+            )}
           </div>
         </section>
       )}
@@ -664,8 +760,8 @@ export const AdminDashboard: React.FC = () => {
           REJECTION MODAL WITH MANDATORY REASON
          ========================================================================= */}
       {rejectModalOpen && selectedProvider && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-black/60 backdrop-blur-sm animate-fade-in">
-          <div className="glass-panel max-w-lg w-full p-6 sm:p-8 rounded-3xl shadow-2xl space-y-5 border border-sunset-border bg-sunset-surface">
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 bg-black/60 backdrop-blur-sm animate-fade-in overflow-y-auto py-6 sm:py-10">
+          <div className="glass-panel max-w-lg w-full max-h-[90vh] overflow-y-auto p-5 sm:p-8 rounded-3xl shadow-2xl space-y-5 border border-sunset-border bg-sunset-surface my-auto">
             
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5 text-red-400">

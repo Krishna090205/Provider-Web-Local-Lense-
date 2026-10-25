@@ -1,6 +1,10 @@
 import { supabase, isSupabaseConfigured } from './supabase';
-import { Listing, Review, Profile, FilterOptions, UserRole, ProviderStatus, ListingStatus, NotificationItem } from './types';
-import { INITIAL_LISTINGS, INITIAL_REVIEWS } from './seedData';
+import { Database } from '../types/database';
+import { Listing, ListingCategory, Review, Profile, FilterOptions, UserRole, ProviderStatus, ListingStatus, NotificationItem } from './types';
+
+export type ExperienceRow = Database['public']['Tables']['experience']['Row'];
+export type ExperienceInsert = Database['public']['Tables']['experience']['Insert'];
+export type ExperienceUpdate = Database['public']['Tables']['experience']['Update'];
 
 // Local storage keys
 const STORAGE_KEY_LISTINGS = 'locallens_listings_v1';
@@ -10,90 +14,173 @@ const STORAGE_KEY_USER = 'locallens_current_user_v1';
 const STORAGE_KEY_PROVIDERS = 'locallens_providers_v1';
 const STORAGE_KEY_NOTIFICATIONS = 'locallens_notifications_v1';
 
-// Initial Mock Providers for rich demo testing
-const INITIAL_PROVIDERS: Profile[] = [
-  {
-    id: 'prov-001',
-    email: 'rajesh.kulkarni@mumbaicafe.in',
-    name: 'Rajesh Kulkarni',
-    business_name: 'Marine Sunset Cafe & Eatery',
-    role: 'provider',
-    provider_status: 'pending',
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80',
-    created_at: '2026-10-21T10:30:00Z',
-    theme: 'system'
-  },
-  {
-    id: 'prov-002',
-    email: 'farhan@merchantcrafts.in',
-    name: 'Farhan Merchant',
-    business_name: 'Colaba Heritage Curios & Crafts',
-    role: 'provider',
-    provider_status: 'pending',
-    avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=200&q=80',
-    created_at: '2026-10-22T14:15:00Z',
-    theme: 'system'
-  },
-  {
-    id: 'prov-003',
-    email: 'priya@malabarstays.in',
-    name: 'Priya Shenoy',
-    business_name: 'Malabar Hill Boutique Havens',
-    role: 'provider',
-    provider_status: 'approved',
-    reviewed_by: 'admin-demo-id',
-    reviewed_at: '2026-10-19T11:00:00Z',
-    avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=200&q=80',
-    created_at: '2026-10-18T09:00:00Z',
-    theme: 'system'
-  },
-  {
-    id: 'prov-004',
-    email: 'vikram@sawantfoods.in',
-    name: 'Vikramaditya Sawant',
-    business_name: 'Sawant Bandra Delicacies',
-    role: 'provider',
-    provider_status: 'rejected',
-    provider_review_note: 'Food safety license documentation is expired. Please re-upload valid municipal trade license.',
-    reviewed_by: 'admin-demo-id',
-    reviewed_at: '2026-10-22T16:00:00Z',
-    avatar: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?auto=format&fit=crop&w=200&q=80',
-    created_at: '2026-10-20T12:00:00Z',
-    theme: 'system'
-  }
-];
+// ----------------------------------------------------
+// Real Database Provider Management (No Mock/Dummy Users)
+// ----------------------------------------------------
 
-function getLocalProviders(): Profile[] {
+export function purgeDummyStorageData(): void {
+  if (typeof localStorage === 'undefined') return;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY_PROVIDERS);
-    if (!raw) {
-      localStorage.setItem(STORAGE_KEY_PROVIDERS, JSON.stringify(INITIAL_PROVIDERS));
-      return INITIAL_PROVIDERS;
+    // 1. Purge dummy providers from local storage
+    const rawProviders = localStorage.getItem(STORAGE_KEY_PROVIDERS);
+    if (rawProviders) {
+      const providers = JSON.parse(rawProviders);
+      if (Array.isArray(providers)) {
+        const cleaned = providers.filter(
+          (p: Profile) =>
+            !p.id?.startsWith('prov-00') &&
+            !p.email?.includes('mumbaicafe.in') &&
+            !p.email?.includes('merchantcrafts.in') &&
+            !p.email?.includes('malabarstays.in') &&
+            !p.email?.includes('sawantfoods.in')
+        );
+        localStorage.setItem(STORAGE_KEY_PROVIDERS, JSON.stringify(cleaned));
+      }
     }
-    return JSON.parse(raw);
+
+    // 2. Purge dummy accounts from permanent registry
+    const rawAccounts = localStorage.getItem('locallens_registered_accounts_v1');
+    if (rawAccounts) {
+      const accounts = JSON.parse(rawAccounts);
+      if (Array.isArray(accounts)) {
+        const cleaned = accounts.filter(
+          (a: Profile) =>
+            !a.id?.startsWith('prov-00') &&
+            a.id !== 'admin-demo-id' &&
+            !a.email?.includes('mumbaicafe.in') &&
+            !a.email?.includes('merchantcrafts.in') &&
+            !a.email?.includes('sawantfoods.in') &&
+            a.email !== 'arun.kumar.google@gmail.com'
+        );
+        localStorage.setItem('locallens_registered_accounts_v1', JSON.stringify(cleaned));
+      }
+    }
+
+    // 3. Purge dummy user from current session if matching mock IDs
+    const rawUser = localStorage.getItem(STORAGE_KEY_USER);
+    if (rawUser) {
+      const u = JSON.parse(rawUser);
+      if (
+        u?.id?.startsWith('prov-00') ||
+        u?.id === 'admin-demo-id' ||
+        u?.email?.includes('mumbaicafe.in') ||
+        u?.email?.includes('sawantfoods.in') ||
+        u?.email === 'arun.kumar.google@gmail.com'
+      ) {
+        localStorage.removeItem(STORAGE_KEY_USER);
+      }
+    }
+
+    // 4. Purge dummy mock reviews and listings cache
+    localStorage.removeItem(STORAGE_KEY_REVIEWS);
+    localStorage.removeItem(STORAGE_KEY_LISTINGS);
   } catch {
-    return INITIAL_PROVIDERS;
+    // Ignore storage parse errors
   }
 }
 
-function saveLocalProviders(providers: Profile[]) {
+// Auto-run cleanup in browser
+if (typeof window !== 'undefined') {
+  purgeDummyStorageData();
+}
+
+export function getLocalProviders(): Profile[] {
   try {
-    localStorage.setItem(STORAGE_KEY_PROVIDERS, JSON.stringify(providers));
+    const raw = localStorage.getItem(STORAGE_KEY_PROVIDERS);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (p: Profile) =>
+        !p.id?.startsWith('prov-00') &&
+        !p.email?.includes('mumbaicafe.in') &&
+        !p.email?.includes('merchantcrafts.in') &&
+        !p.email?.includes('malabarstays.in') &&
+        !p.email?.includes('sawantfoods.in')
+    );
+  } catch {
+    return [];
+  }
+}
+
+export function saveLocalProviders(providers: Profile[]) {
+  try {
+    const cleaned = providers.filter(
+      (p: Profile) =>
+        !p.id?.startsWith('prov-00') &&
+        !p.email?.includes('mumbaicafe.in') &&
+        !p.email?.includes('merchantcrafts.in') &&
+        !p.email?.includes('malabarstays.in') &&
+        !p.email?.includes('sawantfoods.in')
+    );
+    localStorage.setItem(STORAGE_KEY_PROVIDERS, JSON.stringify(cleaned));
   } catch (e) {
     console.error('Failed to save providers to localStorage', e);
   }
 }
 
+export function addLocalProvider(newProvider: Profile): void {
+  const current = getLocalProviders();
+  const existingIdx = current.findIndex(p => p.id === newProvider.id || (p.email && p.email === newProvider.email));
+  let updated: Profile[];
+  if (existingIdx >= 0) {
+    const existing = current[existingIdx];
+    // Use newly supplied status if present, otherwise preserve existing
+    const preservedStatus = newProvider.provider_status || existing.provider_status || 'pending';
+
+    updated = [...current];
+    updated[existingIdx] = {
+      ...existing,
+      ...newProvider,
+      provider_status: preservedStatus,
+      provider_review_note: newProvider.provider_review_note ?? existing.provider_review_note,
+      reviewed_by: newProvider.reviewed_by ?? existing.reviewed_by,
+      reviewed_at: newProvider.reviewed_at ?? existing.reviewed_at
+    };
+  } else {
+    updated = [newProvider, ...current];
+  }
+  saveLocalProviders(updated);
+}
+
+const STORAGE_KEY_DELETED_EXPERIENCES = 'locallens_deleted_experiences_v1';
+
+// Known purged test experiences that should never appear on provider dashboards or listings
+export const KNOWN_PURGED_EXPERIENCES = [
+  'EXP-1790564147905',
+  'EXP-1790601503825',
+  'EXP-1790763251184',
+  'EXP-1792829731549'
+];
+
+export function getDeletedListingIds(): string[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_DELETED_EXPERIENCES);
+    const localDeleted: string[] = raw ? JSON.parse(raw) : [];
+    return Array.from(new Set([...KNOWN_PURGED_EXPERIENCES, ...localDeleted]));
+  } catch {
+    return KNOWN_PURGED_EXPERIENCES;
+  }
+}
+
+export function markListingAsDeleted(id: string): void {
+  try {
+    const current = getDeletedListingIds();
+    if (!current.includes(id)) {
+      localStorage.setItem(STORAGE_KEY_DELETED_EXPERIENCES, JSON.stringify([...current, id]));
+    }
+  } catch {}
+}
+
 function getLocalListings(): Listing[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_LISTINGS);
-    if (!raw) {
-      localStorage.setItem(STORAGE_KEY_LISTINGS, JSON.stringify(INITIAL_LISTINGS));
-      return INITIAL_LISTINGS;
-    }
-    return JSON.parse(raw);
+    if (!raw) return [];
+    const list: Listing[] = JSON.parse(raw) || [];
+    const deleted = getDeletedListingIds();
+    return list.filter(l => !deleted.includes(l.id));
   } catch {
-    return INITIAL_LISTINGS;
+    return [];
   }
 }
 
@@ -108,13 +195,10 @@ function saveLocalListings(listings: Listing[]) {
 function getLocalReviews(): Review[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_REVIEWS);
-    if (!raw) {
-      localStorage.setItem(STORAGE_KEY_REVIEWS, JSON.stringify(INITIAL_REVIEWS));
-      return INITIAL_REVIEWS;
-    }
-    return JSON.parse(raw);
+    if (!raw) return [];
+    return JSON.parse(raw) || [];
   } catch {
-    return INITIAL_REVIEWS;
+    return [];
   }
 }
 
@@ -146,7 +230,16 @@ export function saveLocalFavorites(favs: string[]) {
 export function getStoredUser(): Profile | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_USER);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const u = JSON.parse(raw);
+      if (u) {
+        // All non-admin accounts are providers
+        if (u.role !== 'admin' && !u.email?.toLowerCase().includes('admin')) {
+          u.role = 'provider';
+        }
+      }
+      return u;
+    }
     return null;
   } catch {
     return null;
@@ -162,6 +255,114 @@ export function saveStoredUser(user: Profile | null) {
     }
   } catch (e) {
     console.error('Failed to save user session', e);
+  }
+}
+
+// ----------------------------------------------------
+// Permanent Registered Accounts Registry
+// Once a user registers with a role, their role remains
+// permanent until they explicitly delete their account.
+// ----------------------------------------------------
+const STORAGE_KEY_REGISTERED_ACCOUNTS = 'locallens_registered_accounts_v1';
+
+export function getRegisteredAccounts(): Profile[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_REGISTERED_ACCOUNTS);
+    if (!raw) return [];
+    const list = JSON.parse(raw);
+    if (!Array.isArray(list)) return [];
+    return list.map((p: Profile) => ({
+      ...p,
+      role: (p.role === 'admin' || p.email?.toLowerCase().includes('admin')) ? 'admin' : 'provider'
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export function saveRegisteredAccount(profile: Profile): void {
+  try {
+    const accounts = getRegisteredAccounts();
+    const idx = accounts.findIndex(
+      a => a.id === profile.id || (profile.email && a.email?.toLowerCase() === profile.email.toLowerCase())
+    );
+    const finalRole: UserRole = (profile.role === 'admin' || profile.email?.toLowerCase().includes('admin') || (idx >= 0 && accounts[idx].role === 'admin'))
+      ? 'admin'
+      : 'provider';
+
+    if (idx >= 0) {
+      accounts[idx] = {
+        ...profile,
+        role: finalRole,
+        provider_status: finalRole === 'admin' ? 'approved' : (profile.provider_status || accounts[idx].provider_status || 'pending')
+      };
+    } else {
+      accounts.push({
+        ...profile,
+        role: finalRole,
+        provider_status: finalRole === 'admin' ? 'approved' : (profile.provider_status || 'pending')
+      });
+    }
+    localStorage.setItem(STORAGE_KEY_REGISTERED_ACCOUNTS, JSON.stringify(accounts));
+  } catch (e) {
+    console.error('Failed to save registered account', e);
+  }
+}
+
+export function findRegisteredAccount(identifier: string): Profile | null {
+  if (!identifier) return null;
+  const accounts = getRegisteredAccounts();
+  const lower = identifier.toLowerCase();
+  const found = accounts.find(a => a.id === identifier || a.email?.toLowerCase() === lower);
+  if (found) {
+    if (lower.includes('admin') || found.email?.toLowerCase().includes('admin')) {
+      return { ...found, role: 'admin', provider_status: 'approved' };
+    }
+    return found;
+  }
+
+  const providers = getLocalProviders();
+  const foundProv = providers.find(p => p.id === identifier || p.email?.toLowerCase() === lower);
+  if (foundProv) {
+    if (lower.includes('admin') || foundProv.email?.toLowerCase().includes('admin')) {
+      return { ...foundProv, role: 'admin', provider_status: 'approved' };
+    }
+    return foundProv;
+  }
+
+  return null;
+}
+
+export function deleteAccountPermanently(userId: string, userEmail?: string): void {
+  try {
+    // 1. Remove from persistent registered accounts
+    const accounts = getRegisteredAccounts().filter(
+      a => a.id !== userId && (!userEmail || a.email?.toLowerCase() !== userEmail.toLowerCase())
+    );
+    localStorage.setItem(STORAGE_KEY_REGISTERED_ACCOUNTS, JSON.stringify(accounts));
+
+    // 2. Remove from providers list
+    const providers = getLocalProviders().filter(
+      p => p.id !== userId && (!userEmail || p.email?.toLowerCase() !== userEmail.toLowerCase())
+    );
+    saveLocalProviders(providers);
+
+    // 3. Clear current user session
+    const current = getStoredUser();
+    if (current && (current.id === userId || (userEmail && current.email?.toLowerCase() === userEmail.toLowerCase()))) {
+      saveStoredUser(null);
+    }
+
+    // 4. Remove intended role
+    localStorage.removeItem('locallens_oauth_intended_role');
+
+    // 5. Broadcast deletion event
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('locallens_user_updated', { detail: { action: 'deleted', userId } }));
+      window.dispatchEvent(new Event('storage'));
+    }
+  } catch (e) {
+    console.error('Failed to delete account permanently', e);
   }
 }
 
@@ -212,50 +413,227 @@ export function markNotificationAsRead(id: string): void {
 }
 
 // ----------------------------------------------------
-// Public API Functions: Listings
+// Public API Functions: Listings & Experience Mappings
 // ----------------------------------------------------
 
 /**
- * Public listing fetch: only returns approved listings from approved providers
- * (or heritage catalog items without an unapproved provider).
+ * Maps a row from public.experience into the application's Listing format
+ */
+export function experienceRowToListing(row: any): Listing {
+  const expId = String(row.experience_id || row.id || '');
+  const expName = String(row.experience_name || row.name || 'Untitled Experience');
+  const cat = String(row.category || 'attractions').toLowerCase();
+  const validCategory: ListingCategory =
+    cat.includes('hotel') ? 'hotels' :
+    cat.includes('food') || cat.includes('cafe') || cat.includes('restaurant') ? 'restaurants' :
+    cat.includes('shop') ? 'shops' :
+    cat.includes('fort') ? 'forts' : 'attractions';
+
+  const img = row.image_url || 'https://images.unsplash.com/photo-1570168007204-dfb528c6958f?auto=format&fit=crop&w=1000&q=80';
+  const hoursText = row.best_time || row.availability || '10:00 AM - 10:00 PM';
+  const hoursMap: Record<string, string> = {
+    'Monday': hoursText,
+    'Tuesday': hoursText,
+    'Wednesday': hoursText,
+    'Thursday': hoursText,
+    'Friday': hoursText,
+    'Saturday': hoursText,
+    'Sunday': hoursText,
+  };
+
+  const areaStr = row.district || row.city || row.region || 'Mumbai';
+  const addrStr = row.city 
+    ? `${expName}, ${row.city}${row.state ? ', ' + row.state : ''}` 
+    : (row.address || `${expName}, Mumbai`);
+
+  return {
+    id: expId,
+    owner_id: row.provider_id || row.user_id || row.provider_email || undefined,
+    owner_email: row.provider_email || undefined,
+    category: validCategory,
+    name: expName,
+    description: row.description || '',
+    address: addrStr,
+    area: areaStr,
+    lat: Number(row.latitude) || 18.9217,
+    lng: Number(row.longitude) || 72.8332,
+    hours: hoursMap,
+    phone: row.phone || null,
+    website: row.source_url || row.website || null,
+    price_level: row.price_inr || (row.price_inr_clean ? '₹' + row.price_inr_clean : '₹₹'),
+    status: (row.status as ListingStatus) || 'approved',
+    provider_status: 'approved',
+    featured: Boolean(row.hidden_gem_bool || row.local_experience_bool),
+    rating: Number(row.rating) || 4.8,
+    review_count: Number(row.review_count) || 1,
+    created_at: row.last_verified || new Date().toISOString(),
+    image_note: typeof row.image_note === 'string' ? row.image_note : (row.image_note || null),
+    photos: [
+      {
+        id: 'photo_' + expId,
+        listing_id: expId,
+        url: img,
+        caption: expName,
+        is_cover: true,
+        display_order: 1
+      }
+    ]
+  };
+}
+
+/**
+ * Prioritization tier for listings based on the image_note column:
+ * Tier 1: image_note = 'Verified exact match' (case-insensitive, trimmed)
+ * Tier 2: other experiences with verification notes
+ * Tier 3: experiences with missing notes (null/empty) or unverified images
+ */
+export function getImageNoteTier(note?: string | null): number {
+  if (note == null) return 3;
+  const trimmed = String(note).trim();
+  if (trimmed === '') return 3;
+
+  const lower = trimmed.toLowerCase();
+
+  // Tier 1: exact match for "Verified exact match"
+  if (lower === 'verified exact match') {
+    return 1;
+  }
+
+  // Tier 3: missing notes or unverified images
+  if (
+    lower.includes('no verified') ||
+    lower.includes('unverified') ||
+    lower.includes('not verified') ||
+    lower.includes('left blank')
+  ) {
+    return 3;
+  }
+
+  // Tier 2: other experiences with verification notes
+  return 2;
+}
+
+/**
+ * Maps a Listing object into public.experience table schema
+ */
+export function listingToExperienceRow(listing: Partial<Listing>, providerEmail?: string): ExperienceInsert {
+  const current = getStoredUser();
+  const effectiveEmail = providerEmail || listing.owner_email || current?.email || null;
+  const ownerId = listing.owner_id || current?.id || null;
+  const photoUrl = listing.photos?.[0]?.url || 'https://images.unsplash.com/photo-1570168007204-dfb528c6958f?auto=format&fit=crop&w=1000&q=80';
+
+  const priceClean = typeof listing.price_level === 'string'
+    ? parseFloat(listing.price_level.replace(/[^\d.]/g, '')) || null
+    : null;
+
+  const hoursString = listing.hours && typeof listing.hours === 'object'
+    ? (Object.values(listing.hours)[0] || '10:00 AM - 10:00 PM')
+    : '10:00 AM - 10:00 PM';
+
+  return {
+    experience_id: listing.id || 'exp_' + Date.now(),
+    experience_name: listing.name || 'Untitled Experience',
+    category: listing.category || 'attractions',
+    sub_category: listing.category || null,
+    description: listing.description || '',
+    city: listing.address || listing.area || 'Mumbai',
+    district: listing.area || 'Mumbai',
+    state: 'Maharashtra',
+    region: 'Konkan / MMR',
+    latitude: typeof listing.lat === 'number' ? listing.lat : 18.9217,
+    longitude: typeof listing.lng === 'number' ? listing.lng : 72.8332,
+    price_inr: listing.price_level || '₹₹',
+    price_inr_clean: priceClean,
+    rating: typeof listing.rating === 'number' ? listing.rating : 5.0,
+    review_count: typeof listing.review_count === 'number' ? listing.review_count : 1,
+    image_url: photoUrl,
+    image_note: listing.name || 'Establishment Photo',
+    source_name: listing.name || 'LocalLens Provider',
+    source_url: (listing.website && listing.website.trim() !== '' && listing.website.trim() !== 'https://' && listing.website.trim() !== 'http://') ? listing.website.trim() : null,
+    best_time: hoursString,
+    availability: 'Open Daily',
+    duration_hours: '2-3 hours',
+    local_experience_bool: true,
+    hidden_gem_bool: false,
+    booking_required: 'No',
+    booking_required_bool: false,
+    indoor_outdoor: 'Indoor / Outdoor',
+    indoor_outdoor_clean: 'Mixed',
+    provider_id: ownerId,
+    user_id: ownerId,
+    provider_email: effectiveEmail,
+    last_verified: new Date().toISOString()
+  };
+}
+
+/**
+ * Public listing fetch: returns all real experiences from Supabase experience table
+ * sorted with newest additions at the top.
  */
 export async function fetchListings(filters?: FilterOptions): Promise<Listing[]> {
-  const providers = getLocalProviders();
-  const approvedProviderIds = new Set(
-    providers.filter(p => p.provider_status === 'approved').map(p => p.id)
-  );
-
-  if (isSupabaseConfigured) {
+  const isTest = typeof process !== 'undefined' && process.env?.NODE_ENV === 'test';
+  if (isSupabaseConfigured && !isTest) {
     try {
       let query = supabase
-        .from('listings')
-        .select('*, photos:listing_photos(*)')
-        .eq('status', 'approved');
+        .from('experience')
+        .select('*')
+        .order('last_verified', { ascending: false });
 
       if (filters?.category && filters.category !== 'all') {
-        query = query.eq('category', filters.category);
+        query = query.ilike('category', `%${filters.category}%`);
       }
       if (filters?.searchQuery) {
-        query = query.ilike('name', `%${filters.searchQuery}%`);
+        query = query.ilike('experience_name', `%${filters.searchQuery}%`);
       }
       const { data, error } = await query;
       if (!error && data && data.length > 0) {
-        return (data as Listing[]).filter(l => !l.owner_id || approvedProviderIds.has(l.owner_id));
+        const deletedIds = getDeletedListingIds();
+        let mappedList = data
+          .map(experienceRowToListing)
+          .filter(item => !deletedIds.includes(item.id));
+
+        if (filters?.area && filters.area !== 'all') {
+          mappedList = mappedList.filter(item => item.area.toLowerCase().includes(filters.area!.toLowerCase()));
+        }
+
+        if (filters?.priceLevel && filters.priceLevel !== 'all') {
+          mappedList = mappedList.filter(item => item.price_level === filters.priceLevel);
+        }
+
+        // Prioritize by image_note:
+        // Tier 1: image_note = 'Verified exact match' first
+        // Tier 2: other experiences with verification notes
+        // Tier 3: experiences with missing notes or unverified images last
+        // Within the same tier, preserve the selected sort order
+        mappedList.sort((a, b) => {
+          const tierA = getImageNoteTier(a.image_note);
+          const tierB = getImageNoteTier(b.image_note);
+          if (tierA !== tierB) {
+            return tierA - tierB;
+          }
+          if (filters?.sortBy === 'rating') {
+            return b.rating - a.rating;
+          } else if (filters?.sortBy === 'reviews') {
+            return b.review_count - a.review_count;
+          } else if (filters?.sortBy === 'name') {
+            return a.name.localeCompare(b.name);
+          } else if (filters?.sortBy === 'price') {
+            const priceA = parseFloat(a.price_level.replace(/[^\d.]/g, '')) || 0;
+            const priceB = parseFloat(b.price_level.replace(/[^\d.]/g, '')) || 0;
+            return priceA - priceB;
+          }
+          return 0;
+        });
+
+        return mappedList;
       }
     } catch (e) {
-      console.warn('Supabase fetch failed, falling back to verified local data', e);
+      console.warn('Supabase experience fetch failed, falling back to verified local data', e);
     }
   }
 
   // Fallback to local verified listings
   let list = getLocalListings();
-
-  // Public listings must be approved, and if owned by a provider, that provider must be approved
-  list = list.filter(item => {
-    if (item.status !== 'approved') return false;
-    if (item.owner_id && !approvedProviderIds.has(item.owner_id)) return false;
-    return true;
-  });
 
   if (filters?.category && filters.category !== 'all') {
     list = list.filter(item => item.category === filters.category);
@@ -279,65 +657,165 @@ export async function fetchListings(filters?: FilterOptions): Promise<Listing[]>
     list = list.filter(item => item.price_level === filters.priceLevel);
   }
 
-  if (filters?.sortBy) {
-    if (filters.sortBy === 'rating') {
-      list.sort((a, b) => b.rating - a.rating);
-    } else if (filters.sortBy === 'reviews') {
-      list.sort((a, b) => b.review_count - a.review_count);
-    } else if (filters.sortBy === 'name') {
-      list.sort((a, b) => a.name.localeCompare(b.name));
+  // Prioritize by image_note tier with secondary sort preservation
+  list.sort((a, b) => {
+    const tierA = getImageNoteTier(a.image_note);
+    const tierB = getImageNoteTier(b.image_note);
+    if (tierA !== tierB) {
+      return tierA - tierB;
     }
-  }
+    if (filters?.sortBy === 'rating') {
+      return b.rating - a.rating;
+    } else if (filters?.sortBy === 'reviews') {
+      return b.review_count - a.review_count;
+    } else if (filters?.sortBy === 'name') {
+      return a.name.localeCompare(b.name);
+    } else if (filters?.sortBy === 'price') {
+      const priceA = parseFloat(a.price_level.replace(/[^\d.]/g, '')) || 0;
+      const priceB = parseFloat(b.price_level.replace(/[^\d.]/g, '')) || 0;
+      return priceA - priceB;
+    }
+    return 0;
+  });
 
   return list;
 }
 
+export const fetchPublicListings = fetchListings;
+
 /**
- * Fetch all listings for Admin oversight (includes pending, approved, rejected)
+ * Fetch all listings for Admin oversight (from public.experience, newest first)
  */
 export async function fetchAllListingsForAdmin(): Promise<Listing[]> {
   if (isSupabaseConfigured) {
     try {
-      const { data, error } = await supabase.from('listings').select('*, photos:listing_photos(*)');
-      if (!error && data) return data as Listing[];
+      const { data, error } = await supabase
+        .from('experience')
+        .select('*')
+        .order('last_verified', { ascending: false });
+      if (!error && data && data.length > 0) {
+        const deletedIds = getDeletedListingIds();
+        return data
+          .map(experienceRowToListing)
+          .filter(item => !deletedIds.includes(item.id));
+      }
     } catch (e) {
-      console.warn('Supabase admin fetch failed', e);
+      console.warn('Supabase admin experience fetch failed', e);
     }
   }
   return getLocalListings();
 }
 
 /**
- * Fetch listings belonging to a specific provider
+ * Fetch listings belonging to a specific provider from public.experience.
+ * Strictly isolates listings so a provider only sees their own establishments.
  */
-export async function fetchListingsByOwner(ownerId: string): Promise<Listing[]> {
+export async function fetchListingsByOwner(ownerId?: string, ownerEmail?: string): Promise<Listing[]> {
+  const currentUser = getStoredUser();
+  let effectiveId = ownerId || currentUser?.id;
+  let effectiveEmail = (ownerEmail || currentUser?.email || '').trim().toLowerCase();
+
+  // If ID or email is missing, try fetching from supabase auth session
+  if (isSupabaseConfigured && (!effectiveId || !effectiveEmail)) {
+    try {
+      const { data: authUser } = await supabase.auth.getUser();
+      if (authUser?.user) {
+        if (!effectiveId) effectiveId = authUser.user.id;
+        if (!effectiveEmail && authUser.user.email) {
+          effectiveEmail = authUser.user.email.trim().toLowerCase();
+        }
+      }
+    } catch {}
+  }
+
+  // Strict isolation: if no provider identity is present, never return any listings
+  if (!effectiveId && !effectiveEmail) {
+    return [];
+  }
+
+  const deletedIds = getDeletedListingIds();
+
+  // Strict ownership check: only listings that strictly match this provider's ID or email
+  const isOwnedByCurrentProvider = (item: Listing): boolean => {
+    if (!item || !item.id || deletedIds.includes(item.id)) return false;
+
+    // Check ID match
+    const matchesId = Boolean(effectiveId && item.owner_id === effectiveId);
+
+    // Check email match
+    const itemEmail = (item.owner_email || '').trim().toLowerCase();
+    const ownerIdAsEmail = (item.owner_id || '').trim().toLowerCase();
+    const matchesEmail = Boolean(
+      effectiveEmail && (itemEmail === effectiveEmail || ownerIdAsEmail === effectiveEmail)
+    );
+
+    return matchesId || matchesEmail;
+  };
+
   if (isSupabaseConfigured) {
     try {
-      const { data, error } = await supabase
-        .from('listings')
-        .select('*, photos:listing_photos(*)')
-        .eq('owner_id', ownerId);
-      if (!error && data) return data as Listing[];
+      let query = supabase
+        .from('experience')
+        .select('*')
+        .order('last_verified', { ascending: false });
+
+      if (effectiveId && effectiveEmail) {
+        query = query.or(`provider_id.eq.${effectiveId},user_id.eq.${effectiveId},provider_email.eq.${effectiveEmail},provider_email.ilike.${effectiveEmail}`);
+      } else if (effectiveId) {
+        query = query.or(`provider_id.eq.${effectiveId},user_id.eq.${effectiveId}`);
+      } else if (effectiveEmail) {
+        query = query.or(`provider_email.eq.${effectiveEmail},provider_email.ilike.${effectiveEmail}`);
+      }
+
+      const { data, error } = await query;
+      if (!error && data) {
+        const dbItems = data
+          .map(experienceRowToListing)
+          .filter(isOwnedByCurrentProvider);
+
+        // Merge any newly registered local listings for this provider so they are instantly visible without delay
+        const localItems = getLocalListings().filter(isOwnedByCurrentProvider);
+
+        const mergedMap = new Map<string, Listing>();
+        for (const item of localItems) {
+          mergedMap.set(item.id, item);
+        }
+        for (const item of dbItems) {
+          mergedMap.set(item.id, item);
+        }
+        return Array.from(mergedMap.values());
+      }
     } catch (e) {
-      console.warn('Supabase owner fetch failed', e);
+      console.warn('Supabase experience fetchByOwner failed, falling back to local', e);
     }
   }
+
+  // Local fallback: strictly filter only listings belonging to this specific provider
   const all = getLocalListings();
-  const owned = all.filter(l => l.owner_id === ownerId);
-  return owned.length > 0 ? owned : all.slice(0, 3);
+  return all.filter(isOwnedByCurrentProvider);
 }
 
 export async function fetchListingById(id: string): Promise<Listing | null> {
+  const deletedIds = getDeletedListingIds();
+  if (deletedIds.includes(id)) {
+    return null;
+  }
+
   if (isSupabaseConfigured) {
     try {
       const { data, error } = await supabase
-        .from('listings')
-        .select('*, photos:listing_photos(*)')
-        .eq('id', id)
-        .single();
-      if (!error && data) return data as Listing;
+        .from('experience')
+        .select('*')
+        .eq('experience_id', id)
+        .maybeSingle();
+
+      if (!error && data) {
+        const expId = String(data.experience_id || (data as any).id || '');
+        if (deletedIds.includes(expId)) return null;
+        return experienceRowToListing(data);
+      }
     } catch (e) {
-      console.warn('Supabase fetchById failed, using local store', e);
+      console.warn('Supabase experience fetchById failed, using local store', e);
     }
   }
 
@@ -346,24 +824,156 @@ export async function fetchListingById(id: string): Promise<Listing | null> {
   return match || null;
 }
 
-// ----------------------------------------------------
-// Public API Functions: Provider Approvals (Admin)
-// ----------------------------------------------------
+export function dbProfileToProfile(row: Record<string, unknown>): Profile {
+  const emailStr = (row.email as string) || '';
+  const isAdmin = row.role === 'admin' || emailStr.toLowerCase().includes('admin');
+  const assignedRole: UserRole = isAdmin ? 'admin' : 'provider';
 
-export async function fetchProviders(): Promise<Profile[]> {
+  return {
+    id: (row.id as string) || 'prov_' + Date.now(),
+    email: emailStr || undefined,
+    role: assignedRole,
+    name: (row.name as string) || (row.full_name as string) || (emailStr ? emailStr.split('@')[0] : 'Provider'),
+    avatar: (row.avatar as string) || (row.avatar_url as string) || undefined,
+    business_name: (row.business_name as string) || undefined,
+    provider_status: (row.provider_status as ProviderStatus) || (assignedRole === 'provider' ? 'pending' : 'approved'),
+    provider_review_note: (row.provider_review_note as string) || undefined,
+    reviewed_by: (row.reviewed_by as string) || undefined,
+    reviewed_at: (row.reviewed_at as string) || undefined,
+    theme: (row.theme as 'light' | 'dark' | 'system') || 'system',
+    created_at: (row.created_at as string) || new Date().toISOString()
+  };
+}
+
+export async function fetchAllUsers(): Promise<Profile[]> {
+  const userMap = new Map<string, Profile>();
+
   if (isSupabaseConfigured) {
     try {
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
-        .eq('role', 'provider')
         .order('created_at', { ascending: false });
-      if (!error && data) return data as Profile[];
+
+      if (!error && data && data.length > 0) {
+        for (const row of data) {
+          const profile = dbProfileToProfile(row as unknown as Record<string, unknown>);
+          userMap.set(profile.id, profile);
+          if (profile.email) userMap.set(profile.email.toLowerCase(), profile);
+        }
+      }
+    } catch (e) {
+      console.warn('Supabase fetchAllUsers error:', e);
+    }
+  }
+
+  const reg = getRegisteredAccounts();
+  const provs = getLocalProviders();
+  for (const u of [...reg, ...provs]) {
+    const key = u.id || u.email?.toLowerCase();
+    if (key && !userMap.has(key)) {
+      userMap.set(key, u);
+    }
+  }
+
+  const currentUser = getStoredUser();
+  if (currentUser) {
+    const key = currentUser.id || currentUser.email?.toLowerCase();
+    if (key && !userMap.has(key)) {
+      userMap.set(key, currentUser);
+    }
+  }
+
+  return Array.from(new Set(userMap.values()));
+}
+
+export async function fetchProviders(): Promise<Profile[]> {
+  const providerMap = new Map<string, Profile>();
+
+  // 1. Fetch from Supabase profiles table
+  if (isSupabaseConfigured) {
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (!error && data && data.length > 0) {
+        for (const row of data) {
+          const profile = dbProfileToProfile(row as unknown as Record<string, unknown>);
+          if (profile.role === 'provider' || profile.provider_status != null || profile.business_name != null) {
+            providerMap.set(profile.id, profile);
+            if (profile.email) {
+              providerMap.set(profile.email.toLowerCase(), profile);
+            }
+          }
+        }
+      }
     } catch (e) {
       console.warn('Supabase fetchProviders failed', e);
     }
   }
-  return getLocalProviders();
+
+  // 2. Merge registered accounts with provider role or provider status
+  const regAccounts = getRegisteredAccounts();
+  for (const acc of regAccounts) {
+    if (acc.role === 'provider' || acc.provider_status) {
+      const key = acc.id || acc.email?.toLowerCase();
+      if (key && !providerMap.has(key)) {
+        providerMap.set(key, acc);
+      }
+    }
+  }
+
+  // 3. Merge local provider registry
+  const localList = getLocalProviders();
+  for (const prov of localList) {
+    const key = prov.id || prov.email?.toLowerCase();
+    if (key && !providerMap.has(key)) {
+      providerMap.set(key, prov);
+    }
+  }
+
+  // 4. Merge current session user if provider
+  const currentUser = getStoredUser();
+  if (currentUser && (currentUser.role === 'provider' || currentUser.provider_status)) {
+    const key = currentUser.id || currentUser.email?.toLowerCase();
+    if (key && !providerMap.has(key)) {
+      providerMap.set(key, currentUser);
+    }
+  }
+
+  // 5. Query public.experience for any provider shops listed
+  if (isSupabaseConfigured) {
+    try {
+      const { data: expRows } = await supabase
+        .from('experience')
+        .select('provider_id, provider_email, source_name, last_verified')
+        .not('provider_id', 'is', null)
+        .limit(100);
+
+      if (expRows && expRows.length > 0) {
+        for (const exp of expRows) {
+          const provId = exp.provider_id as string;
+          const provEmail = exp.provider_email as string;
+          const key = provId || provEmail?.toLowerCase();
+          if (key && !providerMap.has(key)) {
+            providerMap.set(key, {
+              id: provId || 'prov_' + Date.now(),
+              email: provEmail || undefined,
+              role: 'provider',
+              name: (exp.source_name as string) || 'Local Merchant',
+              business_name: (exp.source_name as string) || 'Registered Establishment',
+              provider_status: 'pending',
+              created_at: (exp.last_verified as string) || new Date().toISOString()
+            });
+          }
+        }
+      }
+    } catch {}
+  }
+
+  return Array.from(new Set(providerMap.values()));
 }
 
 export async function updateProviderApproval(
@@ -373,6 +983,8 @@ export async function updateProviderApproval(
   adminId?: string
 ): Promise<Profile | null> {
   const reviewedAt = new Date().toISOString();
+
+  let supabaseUpdatedProfile: Profile | null = null;
 
   if (isSupabaseConfigured) {
     try {
@@ -389,38 +1001,79 @@ export async function updateProviderApproval(
         .single();
 
       if (!error && data) {
-        return data as Profile;
+        supabaseUpdatedProfile = data as Profile;
+      } else if (error) {
+        console.warn('Supabase updateProviderApproval note update warning:', error.message);
+        // Fallback: try updating just provider_status if review note columns do not exist yet in profiles table
+        try {
+          const { data: fallbackData, error: fallbackError } = await supabase
+            .from('profiles')
+            .update({ provider_status: newStatus })
+            .eq('id', providerId)
+            .select()
+            .single();
+          if (!fallbackError && fallbackData) {
+            supabaseUpdatedProfile = fallbackData as Profile;
+          }
+        } catch {}
       }
     } catch (e) {
       console.warn('Supabase updateProviderApproval error', e);
     }
   }
 
-  // Update in local store
+  // Update in local store ALWAYS so local cache and mock fallback stay synchronized
   const providers = getLocalProviders();
-  const index = providers.findIndex(p => p.id === providerId);
-  let updatedProvider: Profile | null = null;
+  const index = providers.findIndex(p => p.id === providerId || (p.email && p.email === providerId));
+  let updatedProvider: Profile | null = supabaseUpdatedProfile;
 
   if (index !== -1) {
     providers[index] = {
       ...providers[index],
       provider_status: newStatus,
       provider_review_note: note || undefined,
-      reviewed_by: adminId || 'admin-demo-id',
+      reviewed_by: adminId || undefined,
       reviewed_at: reviewedAt
     };
     saveLocalProviders(providers);
-    updatedProvider = providers[index];
+    if (!updatedProvider) updatedProvider = providers[index];
+  } else if (supabaseUpdatedProfile) {
+    providers.unshift(supabaseUpdatedProfile);
+    saveLocalProviders(providers);
+  }
+
+  // Also sync with registered permanent accounts
+  const regAccounts = getRegisteredAccounts();
+  const regIdx = regAccounts.findIndex(p => p.id === providerId || (p.email && p.email === providerId));
+  if (regIdx !== -1) {
+    regAccounts[regIdx].provider_status = newStatus;
+    regAccounts[regIdx].provider_review_note = note || undefined;
+    regAccounts[regIdx].reviewed_by = adminId || undefined;
+    regAccounts[regIdx].reviewed_at = reviewedAt;
+    saveRegisteredAccount(regAccounts[regIdx]);
+    if (!updatedProvider) updatedProvider = regAccounts[regIdx];
   }
 
   // If the currently logged-in user is this provider, update their active profile
   const currentUser = getStoredUser();
-  if (currentUser && currentUser.id === providerId) {
+  if (currentUser && (
+    currentUser.id === providerId || 
+    (currentUser.email && (currentUser.email === providerId || currentUser.email === updatedProvider?.email)) || 
+    currentUser.id === updatedProvider?.id
+  )) {
     currentUser.provider_status = newStatus;
     currentUser.provider_review_note = note;
-    currentUser.reviewed_by = adminId || 'admin-demo-id';
+    currentUser.reviewed_by = adminId || undefined;
     currentUser.reviewed_at = reviewedAt;
     saveStoredUser(currentUser);
+  }
+
+  // Notify active components/listeners of status update across windows & tabs
+  if (typeof window !== 'undefined') {
+    try {
+      window.dispatchEvent(new CustomEvent('locallens_user_updated', { detail: { providerId, status: newStatus } }));
+      window.dispatchEvent(new Event('storage'));
+    } catch {}
   }
 
   // Create an in-app notification for the provider
@@ -443,12 +1096,12 @@ export async function updateListingStatus(
   if (isSupabaseConfigured) {
     try {
       const { data, error } = await supabase
-        .from('listings')
-        .update({ status })
-        .eq('id', listingId)
+        .from('experience')
+        .update({ last_verified: new Date().toISOString() })
+        .eq('experience_id', listingId)
         .select()
         .single();
-      if (!error && data) return data as Listing;
+      if (!error && data) return experienceRowToListing(data);
     } catch (e) {
       console.warn('Supabase updateListingStatus error', e);
     }
@@ -562,44 +1215,162 @@ export async function deleteReview(reviewId: string): Promise<boolean> {
 // Public API Functions: Listings Management
 // ----------------------------------------------------
 
-export async function createListing(listingData: Omit<Listing, 'id' | 'created_at' | 'rating' | 'review_count'>): Promise<Listing> {
+export async function createListing(
+  listingData: Omit<Listing, 'id' | 'created_at' | 'rating' | 'review_count'> & { owner_email?: string }
+): Promise<Listing> {
+  const currentUser = getStoredUser();
+  const isAdmin = currentUser?.role === 'admin' || currentUser?.email?.toLowerCase().includes('admin');
+
+  // If user is a provider and not an admin, verify approval
+  if (!isAdmin && currentUser?.role === 'provider') {
+    let isApproved = currentUser.provider_status === 'approved';
+
+    // Verify against Supabase profiles table in case admin just approved
+    const checkId = currentUser.id || listingData.owner_id;
+    if (!isApproved && isSupabaseConfigured && checkId) {
+      try {
+        const { data: dbProfile } = await supabase
+          .from('profiles')
+          .select('provider_status, role')
+          .eq('id', checkId)
+          .single();
+        if (dbProfile?.provider_status === 'approved' || dbProfile?.role === 'admin') {
+          isApproved = true;
+          if (currentUser) {
+            currentUser.provider_status = 'approved';
+            saveStoredUser(currentUser);
+          }
+        }
+      } catch {}
+    }
+
+    if (!isApproved) {
+      const localProv = getLocalProviders().find(p => p.id === checkId);
+      if (localProv?.provider_status === 'approved') {
+        isApproved = true;
+      }
+    }
+
+    if (!isApproved) {
+      throw new Error('Action blocked: Your provider account is currently pending administrator verification. Please wait for an admin to approve your account before publishing.');
+    }
+  }
+
+  let effectiveOwnerId = listingData.owner_id || currentUser?.id || null;
+  let effectiveEmail = (listingData.owner_email || currentUser?.email || '').trim().toLowerCase() || null;
+
+  if (isSupabaseConfigured && (!effectiveOwnerId || !effectiveEmail)) {
+    try {
+      const { data: authUser } = await supabase.auth.getUser();
+      if (authUser?.user) {
+        if (!effectiveOwnerId) effectiveOwnerId = authUser.user.id;
+        if (!effectiveEmail && authUser.user.email) {
+          effectiveEmail = authUser.user.email.trim().toLowerCase();
+        }
+      }
+    } catch {}
+  }
+
+  const generatedId = 'EXP-' + Date.now() + '_' + Math.random().toString(36).substring(2, 6).toUpperCase();
+
   const newListing: Listing = {
     ...listingData,
-    id: 'list_' + Date.now(),
+    owner_id: effectiveOwnerId || ('provider_' + Date.now()),
+    owner_email: effectiveEmail || undefined,
+    id: generatedId,
     created_at: new Date().toISOString(),
     rating: 5.0,
     review_count: 1,
-    status: listingData.status || 'pending'
+    status: listingData.status || 'approved'
   };
 
   if (isSupabaseConfigured) {
     try {
-      const { photos, provider_status, ...insertPayload } = newListing;
-      const { data, error } = await supabase.from('listings').insert(insertPayload).select().single();
-      if (!error && data) return { ...data, photos: photos || [], provider_status } as Listing;
-    } catch (e) {
-      console.warn('Supabase createListing failed, saving locally', e);
+      const expPayload = listingToExperienceRow(newListing, effectiveEmail || undefined);
+
+      // Insert directly into public.experience table in Supabase
+      const insertPromise = supabase
+        .from('experience')
+        .insert(expPayload)
+        .select();
+
+      const timeoutPromise = new Promise<{ data: null; error: { message: string } }>((resolve) =>
+        setTimeout(() => resolve({ data: null, error: { message: 'Database response delayed' } }), 12000)
+      );
+
+      const res = await Promise.race([insertPromise, timeoutPromise]) as any;
+
+      if (!res.error && res.data && res.data.length > 0) {
+        const mapped = experienceRowToListing(res.data[0]);
+        const listings = getLocalListings();
+        const withoutOld = listings.filter(l => l.id !== mapped.id);
+        saveLocalListings([mapped, ...withoutOld]);
+        return mapped;
+      }
+      if (res.error) {
+        console.warn('Supabase experience insert notice:', res.error.message);
+      }
+    } catch (e: unknown) {
+      console.warn('Supabase createListing notice, saving to local cache:', e);
     }
   }
 
+  // Fallback to local listings cache so user never loses work
   const listings = getLocalListings();
-  listings.unshift(newListing);
-  saveLocalListings(listings);
+  const withoutOld = listings.filter(l => l.id !== newListing.id);
+  saveLocalListings([newListing, ...withoutOld]);
   return newListing;
 }
 
 export async function updateListing(id: string, updates: Partial<Listing>): Promise<Listing | null> {
+  const listings = getLocalListings();
+  const current = listings.find(l => l.id === id);
+
   if (isSupabaseConfigured) {
     try {
-      const { photos, provider_status, ...updatePayload } = updates;
-      const { data, error } = await supabase.from('listings').update(updatePayload).eq('id', id).select().single();
-      if (!error && data) return { ...data, photos: photos || [], provider_status } as Listing;
+      const currentUser = getStoredUser();
+      let effectiveEmail = (currentUser?.email || '').trim().toLowerCase() || null;
+      let effectiveOwnerId = current?.owner_id || currentUser?.id || null;
+
+      if (!effectiveEmail || !effectiveOwnerId) {
+        try {
+          const { data: authUser } = await supabase.auth.getUser();
+          if (authUser?.user) {
+            if (!effectiveOwnerId) effectiveOwnerId = authUser.user.id;
+            if (!effectiveEmail && authUser.user.email) {
+              effectiveEmail = authUser.user.email.trim().toLowerCase();
+            }
+          }
+        } catch {}
+      }
+
+      const expPayload = listingToExperienceRow({
+        ...(current || {}),
+        ...updates,
+        id,
+        owner_id: effectiveOwnerId || undefined
+      }, effectiveEmail || undefined);
+
+      const { data, error } = await supabase
+        .from('experience')
+        .update(expPayload)
+        .eq('experience_id', id)
+        .select();
+
+      if (!error && data && data.length > 0) {
+        const mapped = experienceRowToListing(data[0]);
+        const index = listings.findIndex(l => l.id === id);
+        if (index !== -1) {
+          listings[index] = mapped;
+          saveLocalListings(listings);
+        }
+        return mapped;
+      }
     } catch (e) {
       console.warn('Supabase updateListing failed, updating locally', e);
     }
   }
 
-  const listings = getLocalListings();
   const index = listings.findIndex(l => l.id === id);
   if (index !== -1) {
     listings[index] = { ...listings[index], ...updates };
@@ -610,17 +1381,142 @@ export async function updateListing(id: string, updates: Partial<Listing>): Prom
 }
 
 export async function deleteListing(id: string): Promise<boolean> {
+  // 1. Immediately mark this ID as permanently deleted in client storage
+  // so it is immediately hidden from Explore page, Provider Dashboard, Admin, and Detail pages
+  markListingAsDeleted(id);
+
+  // 2. Remove from local listings cache
+  const listings = getLocalListings();
+  saveLocalListings(listings.filter(l => l.id !== id));
+
+  // 3. Remove from favorites
+  const favorites = getLocalFavorites();
+  saveLocalFavorites(favorites.filter(fId => fId !== id));
+
+  // 4. Delete directly from Supabase public.experience table
   if (isSupabaseConfigured) {
     try {
-      const { error } = await supabase.from('listings').delete().eq('id', id);
-      if (!error) return true;
+      const { error } = await supabase
+        .from('experience')
+        .delete()
+        .eq('experience_id', id);
+
+      if (error) {
+        console.warn('Supabase deleteListing notice:', error.message);
+        if (error.code === '55000') {
+          console.error(
+            'Supabase Replica Identity: To enable deletion from public.experience, please run: ALTER TABLE public.experience REPLICA IDENTITY FULL;'
+          );
+        }
+        // Fallback: soft-delete by clearing provider ownership in DB so it never matches the provider
+        try {
+          await supabase
+            .from('experience')
+            .update({
+              provider_id: 'deleted_' + Date.now(),
+              provider_email: 'deleted@internal'
+            })
+            .eq('experience_id', id);
+        } catch {}
+      }
+      return true;
     } catch (e) {
-      console.warn('Supabase deleteListing failed, removing locally', e);
+      console.warn('Supabase deleteListing error:', e);
     }
   }
 
-  const listings = getLocalListings();
-  const filtered = listings.filter(l => l.id !== id);
-  saveLocalListings(filtered);
+  return true;
+}
+
+// ----------------------------------------------------
+// Public API Functions: Photo Upload to Storage
+// ----------------------------------------------------
+
+export interface UploadPhotoResult {
+  url?: string;
+  error?: string;
+}
+
+const MAX_PHOTO_BYTES = 5 * 1024 * 1024; // 5MB
+const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+
+export async function uploadListingPhoto(
+  file: File,
+  providerId: string = 'provider'
+): Promise<UploadPhotoResult> {
+  // Validate file type
+  if (!ALLOWED_MIME_TYPES.includes(file.type)) {
+    return {
+      error: `Invalid file format (${file.type || 'unknown'}). Only JPEG, PNG, and WebP images are allowed.`,
+    };
+  }
+
+  // Validate file size
+  if (file.size > MAX_PHOTO_BYTES) {
+    const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+    return {
+      error: `File is too large (${sizeMb} MB). Maximum allowed upload size is 5 MB.`,
+    };
+  }
+
+  // Attempt Supabase Storage upload if client is configured and not running unit tests
+  const isTest = typeof process !== 'undefined' && process.env?.NODE_ENV === 'test';
+  if (isSupabaseConfigured && !isTest) {
+    try {
+      const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+      const cleanName = `${providerId}/${Date.now()}-${Math.random().toString(36).substring(2, 8)}.${ext}`;
+      
+      const { data, error } = await supabase.storage
+        .from('listing-photos')
+        .upload(cleanName, file, {
+          cacheControl: '3600',
+          upsert: false,
+          contentType: file.type,
+        });
+
+      if (!error && data) {
+        const { data: publicUrlData } = supabase.storage
+          .from('listing-photos')
+          .getPublicUrl(cleanName);
+        
+        if (publicUrlData?.publicUrl) {
+          return { url: publicUrlData.publicUrl };
+        }
+      } else if (error) {
+        console.warn('Supabase storage upload error, falling back to local data URL:', error.message);
+      }
+    } catch (e) {
+      console.warn('Supabase storage exception, falling back to local data URL:', e);
+    }
+  }
+
+  // Fallback to data URL so provider flow continues smoothly offline or in mock demo
+  return new Promise<UploadPhotoResult>((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        resolve({ url: reader.result });
+      } else {
+        resolve({ error: 'Failed to process image file.' });
+      }
+    };
+    reader.onerror = () => {
+      resolve({ error: 'Error reading file.' });
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+export async function deleteListingPhoto(photoUrl: string): Promise<boolean> {
+  if (isSupabaseConfigured && photoUrl.includes('/listing-photos/')) {
+    try {
+      const parts = photoUrl.split('/listing-photos/');
+      if (parts[1]) {
+        await supabase.storage.from('listing-photos').remove([decodeURIComponent(parts[1])]);
+      }
+    } catch (e) {
+      console.warn('Failed to delete photo from storage:', e);
+    }
+  }
   return true;
 }

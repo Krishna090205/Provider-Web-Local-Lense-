@@ -1,17 +1,30 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase, isSupabaseConfigured } from '../../lib/supabase';
 import { Profile, UserRole, ProviderStatus } from '../../types';
-import { getStoredUser, saveStoredUser } from '../../lib/store';
+import {
+  getStoredUser,
+  saveStoredUser,
+  addLocalProvider,
+  getLocalProviders,
+  saveLocalProviders,
+  saveRegisteredAccount,
+  findRegisteredAccount,
+  deleteAccountPermanently
+} from '../../lib/store';
 
 export interface AuthContextType {
   user: Profile | null;
   role: UserRole;
   loading: boolean;
-  signUp: (email: string, pass: string, name: string, role: 'tourist' | 'provider', businessName?: string) => Promise<{ success: boolean; error?: string }>;
+  signUp: (email: string, pass: string, name: string, role: UserRole, businessName?: string) => Promise<{ success: boolean; error?: string }>;
   signIn: (email: string, pass: string) => Promise<{ success: boolean; error?: string }>;
+  signInWithGoogle: (targetRole?: UserRole) => Promise<{ success: boolean; error?: string }>;
+  signInWithGoogleDirect: (targetRole?: UserRole) => Promise<{ success: boolean; error?: string }>;
+  signInWithOAuthToken: (tokenUrlOrHash: string) => Promise<{ success: boolean; error?: string }>;
   signOut: () => Promise<void>;
+  deleteAccount: () => Promise<{ success: boolean; error?: string }>;
   resetPassword: (email: string) => Promise<{ success: boolean; error?: string }>;
-  updateProfile: (name: string, avatar?: string, businessName?: string) => Promise<void>;
+  updateProfile: (name: string, avatar?: string, businessName?: string) => Promise<{ success: boolean; error?: string }>;
   updateUserTheme: (theme: 'light' | 'dark' | 'system') => Promise<void>;
   refreshUser: () => Promise<void>;
   switchDemoRole: (role: UserRole) => void;
@@ -25,18 +38,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<Profile | null>(() => {
-    const existing = getStoredUser();
-    if (existing) return existing;
-    return {
-      id: 'demo-tourist-1',
-      email: 'arun.tourist@locallens.in',
-      name: 'Arun Kumar',
-      role: 'tourist',
-      provider_status: 'approved',
-      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
-      created_at: new Date().toISOString(),
-      theme: 'system'
-    };
+    return getStoredUser();
   });
   const [loading, setLoading] = useState<boolean>(true);
 
@@ -51,25 +53,96 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             .eq('id', session.user.id)
             .single();
 
-          if (profile) {
-            const fullProfile: Profile = {
-              id: session.user.id,
-              email: session.user.email,
-              role: (profile.role as UserRole) || 'tourist',
-              provider_status: (profile.provider_status as ProviderStatus) || (profile.role === 'provider' ? 'pending' : 'approved'),
-              provider_review_note: profile.provider_review_note ?? undefined,
-              reviewed_by: profile.reviewed_by ?? undefined,
-              reviewed_at: profile.reviewed_at ?? undefined,
-              business_name: profile.business_name ?? undefined,
-              name: profile.name || session.user.email?.split('@')[0] || 'User',
-              avatar: profile.avatar ?? undefined,
-              theme: profile.theme || 'system',
-              created_at: profile.created_at || new Date().toISOString()
-            };
-            setUser(fullProfile);
-            saveStoredUser(fullProfile);
-            return;
+          const meta = session.user.user_metadata || {};
+          const googleName = meta.full_name || meta.name || session.user.email?.split('@')[0] || 'User';
+          const googleAvatar = meta.avatar_url || meta.picture || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=250&q=80';
+          const storedRole: UserRole = (localStorage.getItem('locallens_oauth_intended_role') as UserRole) || 'provider';
+
+          // Match local provider store to preserve approval decisions
+          const localMatch = getLocalProviders().find(
+            p => p.id === session.user.id || (p.email && p.email === session.user.email)
+          );
+
+          // Check if this user was already registered with a permanent role
+          const existingAccount = findRegisteredAccount(session.user.id) ||
+            (session.user.email ? findRegisteredAccount(session.user.email) : null);
+
+          // Look for role & status across profile table, auth metadata, and email
+          const rawProfile = profile as Record<string, unknown> | null;
+          const metaRole = (meta.role as UserRole) || (session.user.app_metadata?.role as UserRole);
+          const dbRole = (profile?.role as UserRole) || (rawProfile?.role as UserRole);
+          const emailRole: UserRole | undefined = session.user.email?.toLowerCase().includes('admin') ? 'admin' : undefined;
+
+          // Admin role priority: If DB, metadata, email, or existing registered account designated admin, they are admin!
+          // All other users are providers (tourist role is disabled).
+          let permanentRole: UserRole = 'provider';
+          if (dbRole === 'admin' || metaRole === 'admin' || emailRole === 'admin' || existingAccount?.role === 'admin') {
+            permanentRole = 'admin';
+          } else {
+            permanentRole = 'provider';
           }
+
+          const dbStatus = (profile?.provider_status as ProviderStatus)
+            || (rawProfile?.status as ProviderStatus)
+            || (rawProfile?.approval_status as ProviderStatus)
+            || (rawProfile?.is_approved ? 'approved' : undefined);
+
+          const resolvedStatus: ProviderStatus = permanentRole === 'admin'
+            ? 'approved'
+            : (dbStatus
+              || (localMatch?.provider_status === 'approved' ? 'approved' : undefined)
+              || existingAccount?.provider_status
+              || localMatch?.provider_status
+              || 'pending');
+
+          const fullProfile: Profile = {
+            id: session.user.id,
+            email: session.user.email,
+            role: permanentRole,
+            provider_status: resolvedStatus,
+            provider_review_note: profile?.provider_review_note ?? existingAccount?.provider_review_note ?? localMatch?.provider_review_note ?? undefined,
+            reviewed_by: profile?.reviewed_by ?? existingAccount?.reviewed_by ?? localMatch?.reviewed_by ?? undefined,
+            reviewed_at: profile?.reviewed_at ?? existingAccount?.reviewed_at ?? localMatch?.reviewed_at ?? undefined,
+            business_name: profile?.business_name || (rawProfile?.business_name as string) || (meta.business_name as string) || existingAccount?.business_name || localMatch?.business_name || (permanentRole === 'provider' ? `${googleName}'s Establishment` : undefined),
+            name: profile?.name || (rawProfile?.full_name as string) || (rawProfile?.name as string) || (meta.name as string) || (meta.full_name as string) || existingAccount?.name || localMatch?.name || googleName,
+            avatar: profile?.avatar || (rawProfile?.avatar_url as string) || (rawProfile?.avatar as string) || (meta.avatar_url as string) || (meta.picture as string) || existingAccount?.avatar || localMatch?.avatar || googleAvatar,
+            theme: profile?.theme || existingAccount?.theme || 'system',
+            created_at: profile?.created_at || existingAccount?.created_at || localMatch?.created_at || new Date().toISOString()
+          };
+
+          saveRegisteredAccount(fullProfile);
+          if (fullProfile.role === 'provider') {
+            addLocalProvider(fullProfile);
+          } else if (fullProfile.role === 'admin') {
+            // Clean up any stale provider entry if previously misassigned
+            const currentProviders = getLocalProviders();
+            const cleanedProviders = currentProviders.filter(p => p.id !== session.user.id && (!session.user.email || p.email !== session.user.email));
+            if (cleanedProviders.length !== currentProviders.length) {
+              saveLocalProviders(cleanedProviders);
+            }
+          }
+          setUser(fullProfile);
+          saveStoredUser(fullProfile);
+
+          // Guarantee sync to Supabase public.profiles table so it permanently exists in DB
+          if (isSupabaseConfigured) {
+            try {
+              await supabase.from('profiles').upsert({
+                id: session.user.id,
+                name: fullProfile.name,
+                full_name: fullProfile.name,
+                email: session.user.email,
+                role: permanentRole,
+                provider_status: permanentRole === 'admin' ? 'approved' : fullProfile.provider_status,
+                business_name: fullProfile.business_name || null,
+                avatar_url: fullProfile.avatar || null,
+                updated_at: new Date().toISOString()
+              });
+            } catch {
+              // Ignore background sync errors
+            }
+          }
+          return;
         }
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : 'Supabase session retrieval error';
@@ -78,21 +151,112 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
 
     const current = getStoredUser();
-    if (current) setUser(current);
+    if (current) {
+      if (current.role !== 'admin' && !current.email?.toLowerCase().includes('admin')) {
+        current.role = 'provider';
+      }
+      if (current.role === 'provider') {
+        const localMatch = getLocalProviders().find(p => p.id === current.id || (p.email && p.email === current.email));
+        if (localMatch?.provider_status && localMatch.provider_status !== current.provider_status) {
+          current.provider_status = localMatch.provider_status;
+          current.provider_review_note = localMatch.provider_review_note;
+        }
+        addLocalProvider(current);
+      }
+      saveStoredUser(current);
+      setUser(current);
+    }
   };
 
   useEffect(() => {
-    refreshUser().finally(() => setLoading(false));
+    const handleInitialAuth = async () => {
+      if (isSupabaseConfigured) {
+        // Clean any OAuth error query parameters if user cancelled
+        const searchParams = new URLSearchParams(window.location.search);
+        const urlError = searchParams.get('error') || searchParams.get('error_description');
+        if (urlError) {
+          console.warn('OAuth redirect notice:', urlError);
+        }
+
+        // Handle PKCE authorization code exchange if redirected with ?code=...
+        const code = searchParams.get('code');
+        if (code) {
+          try {
+            await supabase.auth.exchangeCodeForSession(code);
+            window.history.replaceState(null, '', window.location.pathname);
+          } catch (codeErr) {
+            console.warn('Failed to exchange OAuth code for session:', codeErr);
+          }
+        }
+
+        // Handle OAuth tokens if redirected with hash fragments (#access_token=...&refresh_token=...)
+        if (window.location.hash.includes('access_token')) {
+          try {
+            const hash = window.location.hash.startsWith('#')
+              ? window.location.hash.substring(1)
+              : window.location.hash;
+            const params = new URLSearchParams(hash);
+            const accessToken = params.get('access_token');
+            const refreshToken = params.get('refresh_token');
+
+            if (accessToken && refreshToken) {
+              await supabase.auth.setSession({
+                access_token: accessToken,
+                refresh_token: refreshToken,
+              });
+              // Clean the token hash from the URL
+              window.history.replaceState(null, '', window.location.pathname);
+            }
+          } catch (err) {
+            console.warn('Failed to parse OAuth tokens from URL hash:', err);
+          }
+        }
+      }
+
+      await refreshUser();
+      setLoading(false);
+    };
+
+    handleInitialAuth();
+
+    const onUserUpdated = () => {
+      refreshUser();
+    };
+
+    window.addEventListener('locallens_user_updated', onUserUpdated);
+    window.addEventListener('storage', onUserUpdated);
+
+    if (isSupabaseConfigured) {
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+        if (session?.user) {
+          await refreshUser();
+        } else if (event === 'SIGNED_OUT') {
+          setUser(null);
+          saveStoredUser(null);
+        }
+      });
+
+      return () => {
+        subscription.unsubscribe();
+        window.removeEventListener('locallens_user_updated', onUserUpdated);
+        window.removeEventListener('storage', onUserUpdated);
+      };
+    }
+
+    return () => {
+      window.removeEventListener('locallens_user_updated', onUserUpdated);
+      window.removeEventListener('storage', onUserUpdated);
+    };
   }, []);
 
   const signUp = async (
     email: string,
     pass: string,
     name: string,
-    role: 'tourist' | 'provider',
+    role: UserRole,
     businessName?: string
   ): Promise<{ success: boolean; error?: string }> => {
-    const safeRole: UserRole = role === 'provider' ? 'provider' : 'tourist';
+    const safeRole: UserRole = role === 'provider' ? 'provider' : 'admin';
     const providerStatus: ProviderStatus = safeRole === 'provider' ? 'pending' : 'approved';
 
     if (isSupabaseConfigured) {
@@ -117,12 +281,34 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             name,
             role: safeRole,
             provider_status: providerStatus,
-            business_name: businessName || name,
+            business_name: businessName || (safeRole === 'provider' ? name : undefined),
             created_at: new Date().toISOString(),
             theme: 'system'
           };
+          saveRegisteredAccount(newProfile);
+          if (safeRole === 'provider') {
+            addLocalProvider(newProfile);
+          }
           setUser(newProfile);
           saveStoredUser(newProfile);
+
+          // Guarantee upsert in Supabase public.profiles table
+          try {
+            await supabase.from('profiles').upsert({
+              id: data.user.id,
+              name: name,
+              full_name: name,
+              email: email,
+              role: safeRole,
+              provider_status: providerStatus,
+              business_name: businessName || (safeRole === 'provider' ? name : null),
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            });
+          } catch (upsertErr) {
+            console.warn('Supabase profile upsert on signup notice:', upsertErr);
+          }
+
           return { success: true };
         }
       } catch (err: unknown) {
@@ -131,23 +317,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
     }
 
-    // Local simulated auth
-    const simulatedProfile: Profile = {
-      id: 'usr_' + Date.now(),
-      email,
-      name,
-      role: safeRole,
-      provider_status: providerStatus,
-      business_name: businessName || (safeRole === 'provider' ? `${name}'s Enterprises` : undefined),
-      avatar: safeRole === 'provider'
-        ? 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=200&q=80'
-        : 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
-      created_at: new Date().toISOString(),
-      theme: 'system'
-    };
-    setUser(simulatedProfile);
-    saveStoredUser(simulatedProfile);
-    return { success: true };
+    return { success: false, error: 'Database service is required for registration.' };
   };
 
   const signIn = async (email: string, pass: string): Promise<{ success: boolean; error?: string }> => {
@@ -157,22 +327,66 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         if (error) return { success: false, error: error.message };
         if (data.user) {
           const { data: profile } = await supabase.from('profiles').select('*').eq('id', data.user.id).single();
+          const rawProfile = profile as Record<string, unknown> | null;
+          const meta = data.user.user_metadata || {};
+          const metaRole = (meta.role as UserRole) || (data.user.app_metadata?.role as UserRole);
+          const dbRole = (profile?.role as UserRole) || (rawProfile?.role as UserRole);
+          const existing = findRegisteredAccount(data.user.id) || (data.user.email ? findRegisteredAccount(data.user.email) : null);
+          const emailRole: UserRole | undefined = email.toLowerCase().includes('admin') ? 'admin' : undefined;
+
+          // Admin priority check; all other users are providers
+          let persistentRole: UserRole = 'provider';
+          if (dbRole === 'admin' || metaRole === 'admin' || emailRole === 'admin' || existing?.role === 'admin') {
+            persistentRole = 'admin';
+          } else {
+            persistentRole = 'provider';
+          }
+
           const p: Profile = {
             id: data.user.id,
             email: data.user.email,
-            name: profile?.name || email.split('@')[0],
-            role: (profile?.role as UserRole) || 'tourist',
-            provider_status: profile?.provider_status || (profile?.role === 'provider' ? 'pending' : 'approved'),
-            provider_review_note: profile?.provider_review_note ?? undefined,
-            reviewed_by: profile?.reviewed_by ?? undefined,
-            reviewed_at: profile?.reviewed_at ?? undefined,
-            business_name: profile?.business_name ?? undefined,
-            avatar: profile?.avatar ?? undefined,
-            theme: profile?.theme || 'system',
-            created_at: profile?.created_at || new Date().toISOString()
+            name: profile?.name || (rawProfile?.full_name as string) || (rawProfile?.name as string) || (meta.name as string) || (meta.full_name as string) || existing?.name || email.split('@')[0],
+            role: persistentRole,
+            provider_status: persistentRole === 'admin' ? 'approved' : (profile?.provider_status || existing?.provider_status || 'pending'),
+            provider_review_note: profile?.provider_review_note ?? existing?.provider_review_note ?? undefined,
+            reviewed_by: profile?.reviewed_by ?? existing?.reviewed_by ?? undefined,
+            reviewed_at: profile?.reviewed_at ?? existing?.reviewed_at ?? undefined,
+            business_name: profile?.business_name ?? existing?.business_name ?? undefined,
+            avatar: profile?.avatar ?? existing?.avatar ?? undefined,
+            theme: profile?.theme || existing?.theme || 'system',
+            created_at: profile?.created_at || existing?.created_at || new Date().toISOString()
           };
+
+          saveRegisteredAccount(p);
+          if (p.role === 'provider') {
+            addLocalProvider(p);
+          } else if (p.role === 'admin') {
+            const providers = getLocalProviders();
+            const filtered = providers.filter(prov => prov.id !== data.user.id && prov.email !== data.user.email);
+            if (filtered.length !== providers.length) {
+              saveLocalProviders(filtered);
+            }
+          }
           setUser(p);
           saveStoredUser(p);
+
+          // Guarantee upsert into Supabase public.profiles table
+          try {
+            await supabase.from('profiles').upsert({
+              id: data.user.id,
+              full_name: p.name,
+              name: p.name,
+              email: p.email || data.user.email,
+              role: persistentRole,
+              provider_status: persistentRole === 'admin' ? 'approved' : p.provider_status,
+              business_name: p.business_name || null,
+              avatar_url: p.avatar || null,
+              updated_at: new Date().toISOString()
+            });
+          } catch (syncErr) {
+            console.warn('Supabase profile sync on login notice:', syncErr);
+          }
+
           return { success: true };
         }
       } catch (err: unknown) {
@@ -181,36 +395,94 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       }
     }
 
-    // Local simulation logic
-    const lower = email.toLowerCase();
-    let detectedRole: UserRole = 'tourist';
-    let status: ProviderStatus = 'approved';
+    return { success: false, error: 'Database service is required for sign in.' };
+  };
 
-    if (lower.includes('admin')) {
-      detectedRole = 'admin';
-    } else if (lower.includes('provider') || lower.includes('owner') || lower.includes('hotel') || lower.includes('biz')) {
-      detectedRole = 'provider';
-      status = 'approved';
+  const signInWithGoogle = async (targetRole?: UserRole): Promise<{ success: boolean; error?: string }> => {
+    if (targetRole) {
+      localStorage.setItem('locallens_oauth_intended_role', targetRole);
+    } else {
+      localStorage.removeItem('locallens_oauth_intended_role');
     }
 
-    const simUser: Profile = {
-      id: detectedRole === 'admin' ? 'admin-demo-id' : detectedRole === 'provider' ? 'prov-003' : 'tourist-demo-id',
-      email,
-      name: email.split('@')[0].replace(/[._-]/g, ' '),
-      role: detectedRole,
-      provider_status: status,
-      business_name: detectedRole === 'provider' ? 'Malabar Hill Boutique Havens' : undefined,
-      avatar: detectedRole === 'admin'
-        ? 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80'
-        : detectedRole === 'provider'
-        ? 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=200&q=80'
-        : 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80',
-      created_at: new Date().toISOString(),
-      theme: 'system'
-    };
-    setUser(simUser);
-    saveStoredUser(simUser);
+    if (isSupabaseConfigured) {
+      try {
+        const { error } = await supabase.auth.signInWithOAuth({
+          provider: 'google',
+          options: {
+            redirectTo: `${window.location.origin}/auth`,
+          },
+        });
+        if (error) {
+          return { success: false, error: error.message };
+        }
+        return { success: true };
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : 'Google authentication failed';
+        return { success: false, error: msg };
+      }
+    }
+
+    return { success: false, error: 'Database service is required for Google Sign In.' };
+  };
+
+  const deleteAccount = async (): Promise<{ success: boolean; error?: string }> => {
+    if (!user) return { success: false, error: 'No active user session' };
+    const uid = user.id;
+    const uemail = user.email;
+
+    if (isSupabaseConfigured) {
+      try {
+        await supabase.from('profiles').delete().eq('id', uid);
+        await supabase.auth.signOut();
+      } catch (e) {
+        console.warn('Supabase delete profile notice:', e);
+      }
+    }
+
+    deleteAccountPermanently(uid, uemail);
+    setUser(null);
+    saveStoredUser(null);
     return { success: true };
+  };
+
+  const signInWithGoogleDirect = async (targetRole: UserRole = 'provider'): Promise<{ success: boolean; error?: string }> => {
+    return signInWithGoogle(targetRole);
+  };
+
+  const signInWithOAuthToken = async (tokenUrlOrHash: string): Promise<{ success: boolean; error?: string }> => {
+    try {
+      let hash = tokenUrlOrHash.trim();
+      if (hash.includes('#')) {
+        hash = hash.substring(hash.indexOf('#') + 1);
+      } else if (hash.includes('?')) {
+        hash = hash.substring(hash.indexOf('?') + 1);
+      }
+      const params = new URLSearchParams(hash);
+      const accessToken = params.get('access_token');
+      const refreshToken = params.get('refresh_token');
+
+      if (!accessToken) {
+        return { success: false, error: 'Could not find access_token in the provided string.' };
+      }
+
+      if (isSupabaseConfigured) {
+        const { error } = await supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken || '',
+        });
+        if (error) {
+          return { success: false, error: error.message };
+        }
+        await refreshUser();
+        return { success: true };
+      }
+
+      return { success: false, error: 'Supabase is not configured.' };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to parse session token';
+      return { success: false, error: msg };
+    }
   };
 
   const signOut = async (): Promise<void> => {
@@ -229,24 +501,84 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     return { success: true };
   };
 
-  const updateProfile = async (name: string, avatar?: string, businessName?: string): Promise<void> => {
-    if (!user) return;
+  const updateProfile = async (
+    name: string,
+    avatar?: string,
+    businessName?: string
+  ): Promise<{ success: boolean; error?: string }> => {
+    if (!user) return { success: false, error: 'No active user session' };
+
+    const cleanName = name.trim();
+    const cleanBiz = businessName !== undefined ? businessName.trim() : user.business_name;
+
     const updated: Profile = {
       ...user,
-      name,
+      name: cleanName,
       ...(avatar ? { avatar } : {}),
-      ...(businessName ? { business_name: businessName } : {})
+      ...(cleanBiz !== undefined ? { business_name: cleanBiz || undefined } : {})
     };
+
+    // 1. Immediately update local state & active stored session
     setUser(updated);
     saveStoredUser(updated);
 
-    if (isSupabaseConfigured) {
-      await supabase.from('profiles').update({
-        name,
-        avatar: avatar || user.avatar,
-        business_name: businessName || user.business_name
-      }).eq('id', user.id);
+    // 2. Persist to permanent registered accounts registry
+    saveRegisteredAccount(updated);
+
+    // 3. Update providers directory if user is a registered provider
+    const providers = getLocalProviders();
+    const provIndex = providers.findIndex(p => p.id === user.id || (user.email && p.email === user.email));
+    if (provIndex >= 0) {
+      providers[provIndex] = {
+        ...providers[provIndex],
+        name: cleanName,
+        ...(avatar ? { avatar } : {}),
+        ...(cleanBiz !== undefined ? { business_name: cleanBiz || undefined } : {})
+      };
+      saveLocalProviders(providers);
     }
+
+    // 4. Permanently persist in Supabase database and user auth metadata
+    if (isSupabaseConfigured) {
+      try {
+        // A. Upsert into public.profiles table so it permanently exists even if not created prior
+        const { error: profileError } = await supabase
+          .from('profiles')
+          .upsert({
+            id: user.id,
+            name: cleanName,
+            role: user.role,
+            provider_status: user.provider_status || (user.role === 'provider' ? 'pending' : 'approved'),
+            avatar: avatar || user.avatar || null,
+            business_name: cleanBiz || null,
+            updated_at: new Date().toISOString()
+          });
+
+        if (profileError) {
+          console.warn('Supabase public.profiles update notice:', profileError.message);
+        }
+
+        // B. Update Supabase Auth user metadata so session tokens reflect the new name permanently
+        await supabase.auth.updateUser({
+          data: {
+            name: cleanName,
+            full_name: cleanName,
+            ...(cleanBiz ? { business_name: cleanBiz } : {})
+          }
+        });
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : 'Database profile update notice';
+        console.warn('Supabase profile persistence notice:', msg);
+      }
+    }
+
+    // 5. Notify all components and tabs of the updated profile
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('locallens_user_updated', { detail: { action: 'profile_updated', user: updated } }));
+      window.dispatchEvent(new Event('storage'));
+    }
+
+    return { success: true };
   };
 
   const updateUserTheme = async (theme: 'light' | 'dark' | 'system'): Promise<void> => {
@@ -280,11 +612,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     <AuthContext.Provider
       value={{
         user,
-        role: user?.role || 'tourist',
+        role: user?.role || 'provider',
         loading,
         signUp,
         signIn,
+        signInWithGoogle,
+        signInWithGoogleDirect,
+        signInWithOAuthToken,
         signOut,
+        deleteAccount,
         resetPassword,
         updateProfile,
         updateUserTheme,
