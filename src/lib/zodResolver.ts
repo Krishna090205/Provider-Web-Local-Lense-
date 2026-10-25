@@ -1,13 +1,15 @@
 import { toNestErrors } from '@hookform/resolvers';
-import { Resolver, FieldErrors } from 'react-hook-form';
+import { Resolver, FieldValues, ResolverOptions } from 'react-hook-form';
 import { z } from 'zod';
 
 /**
  * Universal safe Zod resolver compatible with both Zod v3 (err.errors) and Zod v4 (err.issues).
  * Completely eliminates "Uncaught (in promise) ZodError" caused by @hookform/resolvers/zod expecting v3 err.errors.
  */
-export function zodResolver<T extends z.ZodTypeAny>(schema: T): Resolver<z.infer<T>> {
-  return async (values) => {
+export function zodResolver<T extends z.ZodType<any, any, any>>(
+  schema: T
+): Resolver<z.infer<T> & FieldValues> {
+  return async (values: any, _context: any, options: ResolverOptions<any>) => {
     try {
       const result = await schema.safeParseAsync(values);
       if (result.success) {
@@ -29,7 +31,7 @@ export function zodResolver<T extends z.ZodTypeAny>(schema: T): Resolver<z.infer
 
       return {
         values: {},
-        errors: toNestErrors(errors, {}) as FieldErrors<z.infer<T>>,
+        errors: toNestErrors(errors, options),
       };
     } catch (err: unknown) {
       if (err && typeof err === 'object' && ('issues' in err || 'errors' in err)) {
@@ -46,7 +48,7 @@ export function zodResolver<T extends z.ZodTypeAny>(schema: T): Resolver<z.infer
         }
         return {
           values: {},
-          errors: toNestErrors(errors, {}) as FieldErrors<z.infer<T>>,
+          errors: toNestErrors(errors, options),
         };
       }
       return {
@@ -56,7 +58,7 @@ export function zodResolver<T extends z.ZodTypeAny>(schema: T): Resolver<z.infer
             type: 'validation',
             message: err instanceof Error ? err.message : 'Validation error',
           },
-        } as FieldErrors<z.infer<T>>,
+        } as any,
       };
     }
   };
