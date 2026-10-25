@@ -14,7 +14,6 @@ const LandingPage = lazy(() => import('./pages/LandingPage').then(m => ({ defaul
 const ExplorePage = lazy(() => import('./pages/ExplorePage').then(m => ({ default: m.ExplorePage })));
 const ListingDetailPage = lazy(() => import('./pages/ListingDetailPage').then(m => ({ default: m.ListingDetailPage })));
 const AuthPage = lazy(() => import('./pages/AuthPage').then(m => ({ default: m.AuthPage })));
-const FortsPage = lazy(() => import('./pages/FortsPage').then(m => ({ default: m.FortsPage })));
 const TouristDashboard = lazy(() => import('./pages/TouristDashboard').then(m => ({ default: m.TouristDashboard })));
 const BusinessDashboard = lazy(() => import('./pages/BusinessDashboard').then(m => ({ default: m.BusinessDashboard })));
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard').then(m => ({ default: m.AdminDashboard })));
@@ -61,7 +60,7 @@ export const App: React.FC = () => {
                       <Route path="/explore" element={<ExplorePage />} />
                       <Route path="/listings/:id" element={<ListingDetailPage />} />
                       <Route path="/auth" element={<AuthPage />} />
-                      <Route path="/forts" element={<FortsPage />} />
+                      <Route path="/forts" element={<Navigate to="/explore?category=forts" replace />} />
                       <Route path="/settings" element={<SettingsPage />} />
                       
                       {/* Dashboard Routes with Role Redirection & RequireRole Guards */}

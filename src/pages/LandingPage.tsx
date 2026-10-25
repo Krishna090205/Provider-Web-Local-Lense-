@@ -156,7 +156,7 @@ export const LandingPage: React.FC = () => {
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3.5 sm:gap-4">
           {categories.map((cat) => {
             const Icon = cat.icon;
-            const targetUrl = cat.id === 'forts' ? '/forts' : `/explore?category=${cat.id}`;
+            const targetUrl = `/explore?category=${cat.id}`;
             return (
               <Link
                 key={cat.id}
@@ -245,7 +245,7 @@ export const LandingPage: React.FC = () => {
 
             <div className="pt-2">
               <Link
-                to="/forts"
+                to="/explore?category=forts"
                 className="btn-accent inline-flex items-center gap-2.5 px-6 py-3"
               >
                 <span>{t('fortsBanner.button')}</span>

@@ -1,14 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
-  Compass, Menu, X, Heart, User, LogOut, Building, ShieldCheck,
-  ChevronDown, Home, Shield, ShoppingBag, Landmark, Hotel, Utensils,
+  Compass, Menu, X, User, LogOut, Building, ShieldCheck,
+  ChevronDown, Home, ShoppingBag, Landmark, Hotel, Utensils,
   Sparkles, Info, Settings, LayoutDashboard, ShieldAlert, Sun, Moon
 } from 'lucide-react';
 import { useAuth } from '../features/auth';
 import { useTheme } from '../features/theme';
 import { useLanguage, LanguageSelector } from '../features/i18n';
-import { useFavorites } from '../hooks/useFavorites';
 import { UserRole } from '../types';
 
 export const Navbar: React.FC = () => {
@@ -17,7 +16,6 @@ export const Navbar: React.FC = () => {
   const effectiveRole: UserRole = (isAdminEmail || role === 'admin' || user?.role === 'admin') ? 'admin' : 'provider';
   const { theme, resolvedTheme, setTheme } = useTheme();
   const { t } = useLanguage();
-  const { favoriteIds } = useFavorites();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -56,7 +54,6 @@ export const Navbar: React.FC = () => {
   const isHome = location.pathname === '/';
   const isExplore = location.pathname === '/explore';
   const isAbout = location.pathname === '/about';
-  const isForts = location.pathname === '/forts';
   const isDashboardActive = location.pathname.startsWith('/dashboard');
 
   return (
@@ -106,19 +103,6 @@ export const Navbar: React.FC = () => {
             >
               <Compass className="w-4 h-4" />
               <span>{t('nav.explore')}</span>
-            </Link>
-
-            {/* 3. Forts */}
-            <Link
-              to="/forts"
-              className={`px-3.5 py-2 rounded-xl text-sm font-semibold transition-all flex items-center gap-2 ${
-                isForts
-                  ? 'text-sunset-accent bg-sunset-accent/10 shadow-inner'
-                  : 'text-sunset-muted hover:text-sunset-text hover:bg-sunset-bg/60'
-              }`}
-            >
-              <Shield className="w-4 h-4" />
-              <span>Forts</span>
             </Link>
 
             {/* 4. Role-Specific Links in Navbar */}
@@ -184,20 +168,6 @@ export const Navbar: React.FC = () => {
 
             {/* Language Selector Dropdown */}
             <LanguageSelector />
-
-            {/* Quick Favorites Access */}
-            <Link
-              to="/forts"
-              title={t('nav.savedPlaces')}
-              className="relative p-2.5 rounded-xl text-sunset-muted hover:text-sunset-accent hover:bg-sunset-bg/60 transition-all"
-            >
-              <Heart className="w-5 h-5" />
-              {favoriteIds.length > 0 && (
-                <span className="absolute top-1 right-1 w-4 h-4 bg-sunset-accent text-sunset-on-accent text-[10px] font-bold rounded-full flex items-center justify-center">
-                  {favoriteIds.length}
-                </span>
-              )}
-            </Link>
 
             {user ? (
               <div className="relative" ref={userDropdownRef}>
@@ -328,20 +298,6 @@ export const Navbar: React.FC = () => {
               )}
             </button>
 
-            {/* Quick Favorites on Mobile/Tablet */}
-            <Link
-              to="/forts"
-              className="relative p-2 text-sunset-muted hover:text-sunset-accent transition-colors"
-              title={t('nav.savedPlaces')}
-            >
-              <Heart className="w-5 h-5" />
-              {favoriteIds.length > 0 && (
-                <span className="absolute top-1 right-1 w-4 h-4 bg-sunset-accent text-sunset-on-accent text-[10px] font-bold rounded-full flex items-center justify-center">
-                  {favoriteIds.length}
-                </span>
-              )}
-            </Link>
-
             {/* Hamburger Button */}
             <button
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -406,15 +362,6 @@ export const Navbar: React.FC = () => {
               >
                 <Compass className="w-4 h-4 text-sunset-accent" />
                 <span>{t('nav.explore')}</span>
-              </Link>
-
-              <Link
-                to="/forts"
-                onClick={() => setMobileMenuOpen(false)}
-                className="px-3.5 py-2.5 rounded-xl text-sm font-semibold text-sunset-text hover:bg-sunset-bg flex items-center gap-2.5"
-              >
-                <Shield className="w-4 h-4 text-sunset-accent" />
-                <span>Maharashtra Forts</span>
               </Link>
 
               <Link

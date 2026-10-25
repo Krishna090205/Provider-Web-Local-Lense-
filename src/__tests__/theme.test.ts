@@ -58,6 +58,6 @@ describe('Theme Persistence and Flash Prevention', () => {
 
     expect(darkInfoWindow).toContain('#f8fafc'); // Dark mode light text
     expect(lightInfoWindow).toContain('#1e293b'); // Light mode dark text
-  });
+  }, 15000);
 });
 

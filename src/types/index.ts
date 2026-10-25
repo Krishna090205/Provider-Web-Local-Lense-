@@ -76,6 +76,7 @@ export interface FilterOptions {
   area?: string;
   sortBy?: 'rating' | 'reviews' | 'name' | 'price';
   priceLevel?: string;
+  exactImageNote?: string;
 }
 
 export interface NotificationItem {

@@ -36,7 +36,7 @@ export const Footer: React.FC = () => {
               <li><Link to="/explore?category=restaurants" className="hover:text-sunset-accent transition-colors">{t('footer.iraniCafes')}</Link></li>
               <li><Link to="/explore?category=shops" className="hover:text-sunset-accent transition-colors">{t('footer.historicBazaars')}</Link></li>
               <li><Link to="/explore?category=attractions" className="hover:text-sunset-accent transition-colors">{t('footer.artDeco')}</Link></li>
-              <li><Link to="/forts" className="hover:text-sunset-accent transition-colors">{t('footer.marathaForts')}</Link></li>
+              <li><Link to="/explore?category=forts" className="hover:text-sunset-accent transition-colors">{t('footer.marathaForts')}</Link></li>
             </ul>
           </div>
 

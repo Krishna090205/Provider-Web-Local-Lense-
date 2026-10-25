@@ -514,6 +514,37 @@ export function getImageNoteTier(note?: string | null): number {
 }
 
 /**
+ * Explore page priority ordering:
+ * Priority 1 — Show first: image_note exactly equals "Verified exact match"
+ * Priority 2 — Show after Priority 1: other Wikimedia Commons / verification notes, plus null/empty/unexpected notes
+ * Priority 3 — Show last: any experience whose image_note contains
+ * "Wikimedia Commons - Red Fort, Delhi (representative Heritage/Fort/Architecture/Museum photo)"
+ */
+export function getExplorePriority(note?: string | null): number {
+  if (note != null) {
+    const trimmed = String(note).trim();
+
+    // Priority 1: Exact match for "Verified exact match"
+    if (trimmed.toLowerCase() === 'verified exact match') {
+      return 1;
+    }
+
+    // Priority 3: Red Fort representative-photo notes
+    const lower = trimmed.toLowerCase();
+    if (
+      lower.includes('wikimedia commons - red fort, delhi (representative heritage/fort/architecture/museum photo)') ||
+      (lower.includes('red fort, delhi') && lower.includes('representative')) ||
+      lower.includes('representative heritage/fort/architecture/museum photo')
+    ) {
+      return 3;
+    }
+  }
+
+  // Priority 2: Other Wikimedia Commons notes, other verification notes, null, empty, unexpected
+  return 2;
+}
+
+/**
  * Maps a Listing object into public.experience table schema
  */
 export function listingToExperienceRow(listing: Partial<Listing>, providerEmail?: string): ExperienceInsert {
@@ -579,6 +610,9 @@ export async function fetchListings(filters?: FilterOptions): Promise<Listing[]>
         .select('*')
         .order('last_verified', { ascending: false });
 
+      if (filters?.exactImageNote) {
+        query = query.eq('image_note', filters.exactImageNote);
+      }
       if (filters?.category && filters.category !== 'all') {
         query = query.ilike('category', `%${filters.category}%`);
       }
@@ -586,11 +620,15 @@ export async function fetchListings(filters?: FilterOptions): Promise<Listing[]>
         query = query.ilike('experience_name', `%${filters.searchQuery}%`);
       }
       const { data, error } = await query;
-      if (!error && data && data.length > 0) {
+      if (!error && data) {
         const deletedIds = getDeletedListingIds();
         let mappedList = data
           .map(experienceRowToListing)
           .filter(item => !deletedIds.includes(item.id));
+
+        if (filters?.exactImageNote) {
+          mappedList = mappedList.filter(item => item.image_note === filters.exactImageNote);
+        }
 
         if (filters?.area && filters.area !== 'all') {
           mappedList = mappedList.filter(item => item.area.toLowerCase().includes(filters.area!.toLowerCase()));
@@ -634,6 +672,10 @@ export async function fetchListings(filters?: FilterOptions): Promise<Listing[]>
 
   // Fallback to local verified listings
   let list = getLocalListings();
+
+  if (filters?.exactImageNote) {
+    list = list.filter(item => item.image_note === filters.exactImageNote);
+  }
 
   if (filters?.category && filters.category !== 'all') {
     list = list.filter(item => item.category === filters.category);
