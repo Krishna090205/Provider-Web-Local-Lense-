@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import {
   Search, Filter, SlidersHorizontal, MapPin, Sparkles, RefreshCw,
-  LayoutGrid, Map as MapIcon, Landmark, Shield, Utensils, ShoppingBag, Hotel,
+  LayoutGrid, Columns2, Landmark, Shield, Utensils, ShoppingBag, Hotel,
   Compass, Star, Navigation, Train, Eye
 } from 'lucide-react';
 import { Listing, ListingCategory } from '../types';
@@ -24,7 +24,7 @@ export const ExplorePage: React.FC = () => {
   const [sortBy, setSortBy] = useState<'rating' | 'reviews' | 'name' | 'price'>('rating');
   const [areaFilter, setAreaFilter] = useState<string>('all');
   const [priceFilter, setPriceFilter] = useState<string>('all');
-  const [viewMode, setViewMode] = useState<'grid' | 'map'>('grid');
+  const [viewMode, setViewMode] = useState<'grid' | 'split'>('grid');
   const [showMapPreview, setShowMapPreview] = useState<boolean>(false);
   const [onlyMuseums, setOnlyMuseums] = useState<boolean>(false);
   const [selectedSpotlightId, setSelectedSpotlightId] = useState<string | null>(null);
@@ -155,6 +155,154 @@ export const ExplorePage: React.FC = () => {
     { id: 'shops', label: t('explore.historicBazaars'), icon: ShoppingBag },
   ];
 
+  const renderSpotlight = () => {
+    if (!selectedSpotlightId || !activeSpotlightListing) return null;
+    return (
+      <div className="glass-panel p-4 sm:p-5 rounded-2xl border border-sunset-border shadow-lg animate-fade-in flex flex-col md:flex-row gap-4 items-center justify-between">
+        <div className="flex items-center gap-3.5 flex-1 min-w-0">
+          <img
+            src={activeSpotlightListing.photos?.[0]?.url || 'https://images.unsplash.com/photo-1570168007204-dfb528c6958f?auto=format&fit=crop&w=400&q=80'}
+            alt={activeSpotlightListing.name}
+            className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover flex-shrink-0 border border-sunset-border"
+          />
+          <div className="min-w-0 space-y-0.5">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h4 className="text-sm sm:text-base font-bold font-serif text-sunset-text truncate">
+                {activeSpotlightListing.name.replace('[Sample]', '').trim()}
+              </h4>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded uppercase bg-sunset-accent/15 text-sunset-accent">
+                {activeSpotlightListing.category}
+              </span>
+              {activeSpotlightListing.image_note === 'Verified exact match' && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/25">
+                  ✓ Exact Match
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-sunset-muted truncate">
+              {activeSpotlightListing.area} • {activeSpotlightListing.price_level} • ⭐ {activeSpotlightListing.rating.toFixed(1)} ({activeSpotlightListing.review_count} reviews)
+            </p>
+            <p className="text-[11px] text-sunset-muted line-clamp-1">
+              {activeSpotlightListing.description}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 w-full md:w-auto">
+          <Link
+            to={`/listings/${activeSpotlightListing.id}`}
+            className="btn-accent px-4 py-2 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 flex-1 md:flex-initial shadow-md"
+          >
+            <Eye className="w-3.5 h-3.5" />
+            <span>View Details</span>
+          </Link>
+          <a
+            href={`https://www.google.com/maps/dir/?api=1&destination=${activeSpotlightListing.lat},${activeSpotlightListing.lng}`}
+            target="_blank"
+            rel="noreferrer"
+            className="px-3.5 py-2 glass-panel hover:border-sunset-accent text-sunset-text text-xs font-semibold rounded-xl border border-sunset-border flex items-center gap-1.5 transition-colors"
+            title="Get Directions in Google Maps"
+          >
+            <Navigation className="w-3.5 h-3.5 text-sunset-accent" />
+            <span>Directions</span>
+          </a>
+          <button
+            type="button"
+            onClick={() => setSelectedSpotlightId(null)}
+            className="px-3 py-2 text-xs text-sunset-muted hover:text-sunset-text glass-panel rounded-xl border border-sunset-border"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  const renderPagination = () => {
+    if (totalPages <= 1) return null;
+    return (
+      <div className="mt-10 flex flex-wrap justify-center items-center gap-2">
+        <button
+          disabled={currentPage === 1}
+          onClick={() => {
+            setCurrentPage(prev => Math.max(1, prev - 1));
+            window.scrollTo({ top: 200, behavior: 'smooth' });
+          }}
+          className="px-4 py-2 rounded-xl text-xs font-semibold glass-panel text-sunset-muted hover:text-sunset-text disabled:opacity-40 disabled:cursor-not-allowed border border-sunset-border transition-all"
+          aria-label="Previous page"
+        >
+          ←
+        </button>
+
+        <div className="flex items-center gap-1.5">
+          {paginationItems.map((item, idx) => (
+            item === '...' ? (
+              <span
+                key={`dots-${idx}`}
+                className="w-8 text-center text-sunset-muted font-bold select-none text-xs"
+              >
+                …
+              </span>
+            ) : (
+              <button
+                key={`page-${item}`}
+                onClick={() => {
+                  setCurrentPage(Number(item));
+                  window.scrollTo({ top: 200, behavior: 'smooth' });
+                }}
+                className={`w-9 h-9 rounded-xl text-xs font-bold transition-all ${
+                  currentPage === item
+                    ? 'btn-accent shadow-md scale-105'
+                    : 'glass-panel text-sunset-muted hover:text-sunset-text border border-sunset-border'
+                }`}
+              >
+                {item}
+              </button>
+            )
+          ))}
+        </div>
+
+        <button
+          disabled={currentPage === totalPages}
+          onClick={() => {
+            setCurrentPage(prev => Math.min(totalPages, prev + 1));
+            window.scrollTo({ top: 200, behavior: 'smooth' });
+          }}
+          className="px-4 py-2 rounded-xl text-xs font-semibold glass-panel text-sunset-muted hover:text-sunset-text disabled:opacity-40 disabled:cursor-not-allowed border border-sunset-border transition-all"
+          aria-label="Next page"
+        >
+          →
+        </button>
+      </div>
+    );
+  };
+
+  const renderNoResults = () => (
+    <div className="glass-panel p-12 text-center rounded-3xl border border-sunset-border space-y-4">
+      <div className="w-12 h-12 rounded-2xl bg-sunset-accent/15 text-sunset-accent flex items-center justify-center mx-auto">
+        <Filter className="w-6 h-6" />
+      </div>
+      <h3 className="text-xl font-bold font-serif text-sunset-text">{t('explore.noResults')}</h3>
+      <p className="text-xs text-sunset-muted max-w-md mx-auto">
+        {t('explore.noResultsDesc')}
+      </p>
+      <button
+        onClick={() => {
+          setCategory('all');
+          setSearchQuery('');
+          setSortBy('rating');
+          setAreaFilter('all');
+          setPriceFilter('all');
+          setOnlyMuseums(false);
+          setSearchParams({});
+        }}
+        className="btn-accent px-5 py-2.5 text-xs font-bold"
+      >
+        {t('explore.resetFilters')}
+      </button>
+    </div>
+  );
+
   return (
     <div className="min-h-screen pt-28 pb-20 px-4 sm:px-6 lg:px-8 xl:px-12 max-w-[1600px] w-full mx-auto text-sunset-text transition-colors duration-200">
       
@@ -173,7 +321,7 @@ export const ExplorePage: React.FC = () => {
           </p>
         </div>
 
-        {/* View Mode Switcher (Grid vs Interactive Map) */}
+        {/* View Mode Switcher (Grid vs Split View) */}
         <div className="flex items-center gap-1.5 p-1 rounded-2xl glass-panel border border-sunset-border w-fit self-start md:self-auto shadow-sm">
           <button
             onClick={() => setViewMode('grid')}
@@ -189,16 +337,16 @@ export const ExplorePage: React.FC = () => {
           </button>
 
           <button
-            onClick={() => setViewMode('map')}
-            title={t('explore.viewMap')}
+            onClick={() => setViewMode('split')}
+            title={t('explore.viewSplit')}
             className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
-              viewMode === 'map'
+              viewMode === 'split'
                 ? 'btn-accent shadow-md'
                 : 'text-sunset-muted hover:text-sunset-text'
             }`}
           >
-            <MapIcon className="w-3.5 h-3.5" />
-            <span>{t('explore.viewMap')}</span>
+            <Columns2 className="w-3.5 h-3.5" />
+            <span>{t('explore.viewSplit')}</span>
           </button>
         </div>
       </div>
@@ -331,18 +479,20 @@ export const ExplorePage: React.FC = () => {
           <span>
             {t('explore.showingPlaces', { count: listings.length })}
           </span>
-          <button
-            type="button"
-            onClick={() => setShowMapPreview(!showMapPreview)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all border ${
-              showMapPreview
-                ? 'bg-sunset-accent text-sunset-on-accent border-sunset-accent shadow-sm'
-                : 'glass-panel text-sunset-muted hover:text-sunset-text border-sunset-border'
-            }`}
-          >
-            <MapPin className="w-3.5 h-3.5" />
-            <span>{showMapPreview ? 'Hide Map Overview' : 'Show Map Overview'}</span>
-          </button>
+          {viewMode === 'grid' && (
+            <button
+              type="button"
+              onClick={() => setShowMapPreview(!showMapPreview)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all border ${
+                showMapPreview
+                  ? 'bg-sunset-accent text-sunset-on-accent border-sunset-accent shadow-sm'
+                  : 'glass-panel text-sunset-muted hover:text-sunset-text border-sunset-border'
+              }`}
+            >
+              <MapPin className="w-3.5 h-3.5" />
+              <span>{showMapPreview ? 'Hide Map Overview' : 'Show Map Overview'}</span>
+            </button>
+          )}
         </div>
         <div className="flex items-center gap-2">
           {onlyMuseums && (
@@ -358,184 +508,105 @@ export const ExplorePage: React.FC = () => {
         </div>
       </div>
 
-      {/* Interactive Map Section (Full-Width Responsive Canvas) */}
-      {(viewMode === 'map' || showMapPreview) && (
-        <div className="space-y-4 animate-fade-in mb-8">
-          <div className="glass-panel p-3.5 sm:p-4 rounded-3xl border border-sunset-border shadow-lg space-y-2.5">
-            <MapComponent
-              center={activeSpotlightListing ? [activeSpotlightListing.lat, activeSpotlightListing.lng] : [18.94, 72.84]}
-              zoom={activeSpotlightListing ? 14 : 11}
-              className={`${viewMode === 'map' ? 'h-[520px] sm:h-[600px]' : 'h-[360px] sm:h-[420px]'} w-full rounded-2xl`}
-              markers={mapMarkers}
-              onMarkerClick={(m) => setSelectedSpotlightId(m.id)}
-            />
-
-            <div className="flex flex-wrap items-center justify-between text-xs text-sunset-muted px-2 pt-1 gap-2">
-              <span className="flex items-center gap-1.5">
-                <MapPin className="w-3.5 h-3.5 text-sunset-accent" />
-                <strong className="text-sunset-text">{mapMarkers.length}</strong> Plotted Destinations
-              </span>
-              <span className="text-[11px] bg-sunset-accent/10 text-sunset-accent px-2.5 py-0.5 rounded-full border border-sunset-accent/20">
-                Click any marker to inspect destination details
-              </span>
-            </div>
+      {/* Main View Content: Split View or Full-Width Grid */}
+      {viewMode === 'split' ? (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-start animate-fade-in">
+          {/* Left Side: Datas (Experience Cards) */}
+          <div className="lg:col-span-7 space-y-6">
+            {loading ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5 animate-fade-in">
+                {[1, 2, 3, 4, 5, 6].map((i) => (
+                  <SkeletonCard key={i} />
+                ))}
+              </div>
+            ) : paginatedListings.length > 0 ? (
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5 animate-fade-in">
+                  {paginatedListings.map((listing) => (
+                    <ListingCard key={listing.id} listing={listing} />
+                  ))}
+                </div>
+                {renderPagination()}
+              </>
+            ) : (
+              renderNoResults()
+            )}
           </div>
 
-          {/* Destination Spotlight Banner (when a marker is clicked) */}
-          {selectedSpotlightId && activeSpotlightListing && (
-            <div className="glass-panel p-4 sm:p-5 rounded-2xl border border-sunset-border shadow-lg animate-fade-in flex flex-col md:flex-row gap-4 items-center justify-between">
-              <div className="flex items-center gap-3.5 flex-1 min-w-0">
-                <img
-                  src={activeSpotlightListing.photos?.[0]?.url || 'https://images.unsplash.com/photo-1570168007204-dfb528c6958f?auto=format&fit=crop&w=400&q=80'}
-                  alt={activeSpotlightListing.name}
-                  className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover flex-shrink-0 border border-sunset-border"
+          {/* Right Side: Interactive Map */}
+          <div className="lg:col-span-5 space-y-4 lg:sticky lg:top-24">
+            <div className="glass-panel p-3.5 sm:p-4 rounded-3xl border border-sunset-border shadow-lg space-y-2.5">
+              <MapComponent
+                center={activeSpotlightListing ? [activeSpotlightListing.lat, activeSpotlightListing.lng] : [18.94, 72.84]}
+                zoom={activeSpotlightListing ? 14 : 11}
+                className="h-[460px] sm:h-[520px] lg:h-[calc(100vh-14rem)] min-h-[440px] max-h-[720px] w-full rounded-2xl"
+                markers={mapMarkers}
+                onMarkerClick={(m) => setSelectedSpotlightId(m.id)}
+              />
+
+              <div className="flex flex-wrap items-center justify-between text-xs text-sunset-muted px-2 pt-1 gap-2">
+                <span className="flex items-center gap-1.5">
+                  <MapPin className="w-3.5 h-3.5 text-sunset-accent" />
+                  <strong className="text-sunset-text">{mapMarkers.length}</strong> Plotted Destinations
+                </span>
+                <span className="text-[11px] bg-sunset-accent/10 text-sunset-accent px-2.5 py-0.5 rounded-full border border-sunset-accent/20">
+                  Click any marker to inspect
+                </span>
+              </div>
+            </div>
+
+            {/* Destination Spotlight Banner (when a marker is clicked in split view) */}
+            {selectedSpotlightId && activeSpotlightListing && renderSpotlight()}
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-8 animate-fade-in">
+          {/* Optional Map Preview Canvas in Grid Mode */}
+          {showMapPreview && (
+            <div className="space-y-4 animate-fade-in mb-8">
+              <div className="glass-panel p-3.5 sm:p-4 rounded-3xl border border-sunset-border shadow-lg space-y-2.5">
+                <MapComponent
+                  center={activeSpotlightListing ? [activeSpotlightListing.lat, activeSpotlightListing.lng] : [18.94, 72.84]}
+                  zoom={activeSpotlightListing ? 14 : 11}
+                  className="h-[360px] sm:h-[420px] w-full rounded-2xl"
+                  markers={mapMarkers}
+                  onMarkerClick={(m) => setSelectedSpotlightId(m.id)}
                 />
-                <div className="min-w-0 space-y-0.5">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <h4 className="text-sm sm:text-base font-bold font-serif text-sunset-text truncate">
-                      {activeSpotlightListing.name.replace('[Sample]', '').trim()}
-                    </h4>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded uppercase bg-sunset-accent/15 text-sunset-accent">
-                      {activeSpotlightListing.category}
-                    </span>
-                    {activeSpotlightListing.image_note === 'Verified exact match' && (
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/25">
-                        ✓ Exact Match
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs text-sunset-muted truncate">
-                    {activeSpotlightListing.area} • {activeSpotlightListing.price_level} • ⭐ {activeSpotlightListing.rating.toFixed(1)} ({activeSpotlightListing.review_count} reviews)
-                  </p>
-                  <p className="text-[11px] text-sunset-muted line-clamp-1">
-                    {activeSpotlightListing.description}
-                  </p>
+
+                <div className="flex flex-wrap items-center justify-between text-xs text-sunset-muted px-2 pt-1 gap-2">
+                  <span className="flex items-center gap-1.5">
+                    <MapPin className="w-3.5 h-3.5 text-sunset-accent" />
+                    <strong className="text-sunset-text">{mapMarkers.length}</strong> Plotted Destinations
+                  </span>
+                  <span className="text-[11px] bg-sunset-accent/10 text-sunset-accent px-2.5 py-0.5 rounded-full border border-sunset-accent/20">
+                    Click any marker to inspect destination details
+                  </span>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 w-full md:w-auto">
-                <Link
-                  to={`/listings/${activeSpotlightListing.id}`}
-                  className="btn-accent px-4 py-2 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 flex-1 md:flex-initial shadow-md"
-                >
-                  <Eye className="w-3.5 h-3.5" />
-                  <span>View Details</span>
-                </Link>
-                <a
-                  href={`https://www.google.com/maps/dir/?api=1&destination=${activeSpotlightListing.lat},${activeSpotlightListing.lng}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="px-3.5 py-2 glass-panel hover:border-sunset-accent text-sunset-text text-xs font-semibold rounded-xl border border-sunset-border flex items-center gap-1.5 transition-colors"
-                  title="Get Directions in Google Maps"
-                >
-                  <Navigation className="w-3.5 h-3.5 text-sunset-accent" />
-                  <span>Directions</span>
-                </a>
-                <button
-                  type="button"
-                  onClick={() => setSelectedSpotlightId(null)}
-                  className="px-3 py-2 text-xs text-sunset-muted hover:text-sunset-text glass-panel rounded-xl border border-sunset-border"
-                >
-                  Close
-                </button>
-              </div>
+              {selectedSpotlightId && activeSpotlightListing && renderSpotlight()}
             </div>
           )}
-        </div>
-      )}
 
-      {/* Main Experience Cards Grid (Full-Width Responsive 3-4 Columns on Desktop) */}
-      {loading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 sm:gap-6 animate-fade-in">
-          {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
-            <SkeletonCard key={i} />
-          ))}
-        </div>
-      ) : paginatedListings.length > 0 ? (
-        <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 sm:gap-6 animate-fade-in">
-            {paginatedListings.map((listing) => (
-              <ListingCard key={listing.id} listing={listing} />
-            ))}
-          </div>
-
-          {/* Pagination Controls */}
-          {totalPages > 1 && (
-            <div className="mt-12 flex flex-wrap justify-center items-center gap-2">
-              <button
-                disabled={currentPage === 1}
-                onClick={() => {
-                  setCurrentPage(prev => Math.max(1, prev - 1));
-                  window.scrollTo({ top: 200, behavior: 'smooth' });
-                }}
-                className="px-4 py-2 rounded-xl text-xs font-semibold glass-panel text-sunset-muted hover:text-sunset-text disabled:opacity-40 disabled:cursor-not-allowed border border-sunset-border transition-all"
-                aria-label="Previous page"
-              >
-                ←
-              </button>
-
-              <div className="flex items-center gap-1.5">
-                {paginationItems.map((item, idx) => (
-                  item === '...' ? (
-                    <span
-                      key={`dots-${idx}`}
-                      className="w-8 text-center text-sunset-muted font-bold select-none text-xs"
-                    >
-                      …
-                    </span>
-                  ) : (
-                    <button
-                      key={`page-${item}`}
-                      onClick={() => {
-                        setCurrentPage(Number(item));
-                        window.scrollTo({ top: 200, behavior: 'smooth' });
-                      }}
-                      className={`w-9 h-9 rounded-xl text-xs font-bold transition-all ${
-                        currentPage === item
-                          ? 'btn-accent shadow-md scale-105'
-                          : 'glass-panel text-sunset-muted hover:text-sunset-text border border-sunset-border'
-                      }`}
-                    >
-                      {item}
-                    </button>
-                  )
+          {/* Main Experience Cards Grid (Full-Width Responsive 3-4 Columns on Desktop) */}
+          {loading ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 sm:gap-6 animate-fade-in">
+              {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+                <SkeletonCard key={i} />
+              ))}
+            </div>
+          ) : paginatedListings.length > 0 ? (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 sm:gap-6 animate-fade-in">
+                {paginatedListings.map((listing) => (
+                  <ListingCard key={listing.id} listing={listing} />
                 ))}
               </div>
-
-              <button
-                disabled={currentPage === totalPages}
-                onClick={() => {
-                  setCurrentPage(prev => Math.min(totalPages, prev + 1));
-                  window.scrollTo({ top: 200, behavior: 'smooth' });
-                }}
-                className="px-4 py-2 rounded-xl text-xs font-semibold glass-panel text-sunset-muted hover:text-sunset-text disabled:opacity-40 disabled:cursor-not-allowed border border-sunset-border transition-all"
-                aria-label="Next page"
-              >
-                →
-              </button>
-            </div>
+              {renderPagination()}
+            </>
+          ) : (
+            renderNoResults()
           )}
-        </>
-      ) : (
-        <div className="glass-panel p-12 text-center rounded-3xl border border-sunset-border space-y-4">
-          <div className="w-12 h-12 rounded-2xl bg-sunset-accent/15 text-sunset-accent flex items-center justify-center mx-auto">
-            <Filter className="w-6 h-6" />
-          </div>
-          <h3 className="text-xl font-bold font-serif text-sunset-text">{t('explore.noResults')}</h3>
-          <p className="text-xs text-sunset-muted max-w-md mx-auto">
-            {t('explore.noResultsDesc')}
-          </p>
-          <button
-            onClick={() => {
-              setCategory('all');
-              setSearchQuery('');
-              setAreaFilter('all');
-              setOnlyMuseums(false);
-            }}
-            className="btn-accent px-5 py-2.5 text-xs font-bold"
-          >
-            {t('explore.resetFilters')}
-          </button>
         </div>
       )}
 

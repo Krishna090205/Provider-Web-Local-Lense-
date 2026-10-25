@@ -108,7 +108,7 @@ export const en: TranslationDictionary = {
     title: 'Explore Mumbai & Regional Forts',
     subtitle: 'Discover premier art museums, Sahyadri mountain fortresses, legendary Irani cafes, century-old bazaars, and colonial architectural gems.',
     viewGrid: 'Grid',
-    viewSplit: 'Split Map',
+    viewSplit: 'Split View',
     viewMap: 'Map View',
     allPlaces: 'All Places',
     museumsLandmarks: 'Museums & Landmarks',
