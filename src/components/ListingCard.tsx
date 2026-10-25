@@ -102,13 +102,13 @@ export const ListingCard: React.FC<ListingCardProps> = ({ listing }) => {
 
         {/* Title */}
         <Link to={`/listings/${listing.id}`} className="group-hover:text-sunset-accent transition-colors block">
-          <h3 className="text-base sm:text-lg font-bold text-sunset-text line-clamp-1 mb-2 font-serif break-words">
+          <h3 className="text-base sm:text-lg font-bold text-sunset-text line-clamp-1 mb-2 font-serif break-words h-7 flex items-center">
             {displayName}
           </h3>
         </Link>
 
         {/* Description snippet */}
-        <p className="text-xs text-sunset-muted line-clamp-2 leading-relaxed mb-4 flex-1">
+        <p className="text-xs text-sunset-muted line-clamp-2 leading-relaxed mb-4 h-9 overflow-hidden">
           {listing.description}
         </p>
 

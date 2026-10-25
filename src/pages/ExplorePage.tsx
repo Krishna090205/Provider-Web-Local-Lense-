@@ -706,10 +706,10 @@ export const ExplorePage: React.FC = () => {
 
       {/* Main View Content: Split View or Full-Width Grid */}
       {viewMode === 'split' ? (
-        <div className="space-y-10 animate-fade-in">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 lg:gap-8 items-start">
+        <div className="space-y-8 sm:space-y-10 animate-fade-in">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5 items-start">
             {/* Left Column: Experience Cards (Datas) */}
-            <div className="space-y-6">
+            <div className="space-y-4 sm:space-y-5">
               {loading ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5 animate-fade-in">
                   {[1, 2, 3, 4, 5, 6].map((i) => (
@@ -728,12 +728,12 @@ export const ExplorePage: React.FC = () => {
             </div>
 
             {/* Right Column: Interactive Map, Explore Nearby & Additional Cards */}
-            <div className="space-y-6">
+            <div className="space-y-4 sm:space-y-5">
               <div className="glass-panel p-3.5 sm:p-4 rounded-3xl border border-sunset-border shadow-lg space-y-2.5">
                 <MapComponent
                   center={activeSpotlightListing ? [activeSpotlightListing.lat, activeSpotlightListing.lng] : [18.94, 72.84]}
                   zoom={activeSpotlightListing ? 14 : 11}
-                  className="h-[360px] sm:h-[400px] lg:h-[420px] w-full rounded-2xl"
+                  className="h-[360px] sm:h-[380px] lg:h-[400px] w-full rounded-2xl"
                   markers={mapMarkers}
                   onMarkerClick={(m) => setSelectedSpotlightId(m.id)}
                 />
@@ -755,32 +755,18 @@ export const ExplorePage: React.FC = () => {
               {/* Compact Explore Nearby Section below the map */}
               {renderExploreNearby()}
 
-              {/* Additional Place Cards Grid below Explore Nearby (Same Card Design as Left) */}
+              {/* Additional Place Cards Grid below Explore Nearby (Matching Left Side Grid Exactly) */}
               {loading ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5 animate-fade-in pt-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5 animate-fade-in">
                   {[1, 2, 3, 4].map((i) => (
                     <SkeletonCard key={`skel-right-${i}`} />
                   ))}
                 </div>
               ) : rightListings.length > 0 ? (
-                <div className="space-y-4 pt-2">
-                  <div className="flex items-center justify-between border-b border-sunset-border pb-2.5">
-                    <div className="flex items-center gap-2">
-                      <Sparkles className="w-4 h-4 text-sunset-accent" />
-                      <h4 className="font-serif font-bold text-sm sm:text-base text-sunset-text">
-                        More Experiences to Explore
-                      </h4>
-                    </div>
-                    <span className="text-xs text-sunset-muted font-medium">
-                      {rightListings.length} {rightListings.length === 1 ? 'place' : 'places'}
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5 animate-fade-in">
-                    {rightListings.map((listing) => (
-                      <ListingCard key={`right-${listing.id}`} listing={listing} />
-                    ))}
-                  </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-5 animate-fade-in">
+                  {rightListings.map((listing) => (
+                    <ListingCard key={`right-${listing.id}`} listing={listing} />
+                  ))}
                 </div>
               ) : null}
             </div>
